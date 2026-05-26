@@ -3,6 +3,7 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.util.*;
 import java.io.IOException;
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -162,8 +163,8 @@ public class AdminDashboard extends JFrame {
         JButton exportEmployeesBtn = new JButton("Export Employees CSV");
         exportEmployeesBtn.addActionListener(e -> {
             try {
-                Path out = exportCsvCopy("data/employees.csv", "employees");
-                JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
+                Path out = exportCsvWithChooser("data/employees.csv", "employees");
+                if (out != null) JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
             }
@@ -320,8 +321,8 @@ public class AdminDashboard extends JFrame {
         JButton exportPayrollBtn = new JButton("Export Payroll CSV");
         exportPayrollBtn.addActionListener(e -> {
             try {
-                Path out = exportCsvCopy("data/payroll.csv", "payroll");
-                JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
+                Path out = exportCsvWithChooser("data/payroll.csv", "payroll");
+                if (out != null) JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
             }
@@ -588,7 +589,10 @@ public class AdminDashboard extends JFrame {
         if (viewRow < 0) return;
 
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
-        employees.remove(modelRow);
+        Employee removed = employees.remove(modelRow);
+        if (removed != null) {
+            deleteEmployeeReferences(removed);
+        }
         saveEmployees();
 
         dispose();
@@ -823,6 +827,24 @@ public class AdminDashboard extends JFrame {
     // Refreshes the payroll table model in place
     private void refreshPayrollTable() {
         payrolls = loadPayrolls();
+
+        // Cleanup: remove payroll records for employees that no longer exist
+        java.util.Set<String> existingEmpIds = new java.util.HashSet<>();
+        for (Employee e : employees) existingEmpIds.add(String.valueOf(e.getId()));
+        boolean removedOrphans = false;
+        java.util.List<Payroll> filtered = new ArrayList<>();
+        for (Payroll p : payrolls) {
+            if (!existingEmpIds.contains(String.valueOf(p.getEmployeeId()))) {
+                removedOrphans = true;
+                continue;
+            }
+            filtered.add(p);
+        }
+        if (removedOrphans) {
+            payrolls = filtered;
+            savePayrolls();
+        }
+
         // Remove all rows
         payrollModel.setRowCount(0);
         // Determine if all payrolls for the current month are still pending
@@ -881,6 +903,50 @@ public class AdminDashboard extends JFrame {
         refreshPayrollTable();
     }
 
+    private void deleteEmployeeReferences(Employee emp) {
+        String empId = String.valueOf(emp.getId());
+
+        // Remove payroll rows for this employee
+        java.util.List<String[]> payrollRaw = CSVHandler.readCSV("data/payroll.csv");
+        if (payrollRaw.size() > 1) {
+            java.util.List<String[]> out = new ArrayList<>();
+            out.add(payrollRaw.get(0));
+            for (int i = 1; i < payrollRaw.size(); i++) {
+                String[] row = payrollRaw.get(i);
+                if (row.length >= 2 && empId.equals(String.valueOf(row[1]).trim())) continue;
+                out.add(row);
+            }
+            CSVHandler.writeCSV("data/payroll.csv", out);
+        }
+
+        // Remove payout account rows for this employee
+        java.util.List<String[]> payoutRaw = CSVHandler.readCSV("data/payout_accounts.csv");
+        if (payoutRaw.size() > 1) {
+            java.util.List<String[]> out = new ArrayList<>();
+            out.add(payoutRaw.get(0));
+            for (int i = 1; i < payoutRaw.size(); i++) {
+                String[] row = payoutRaw.get(i);
+                if (row.length >= 1 && empId.equals(String.valueOf(row[0]).trim())) continue;
+                out.add(row);
+            }
+            CSVHandler.writeCSV("data/payout_accounts.csv", out);
+        }
+
+        // Remove employee user from users.csv (username is first name)
+        String username = emp.getFirstName() == null ? "" : emp.getFirstName().trim();
+        java.util.List<String[]> usersRaw = CSVHandler.readCSV("data/users.csv");
+        if (usersRaw.size() > 1) {
+            java.util.List<String[]> out = new ArrayList<>();
+            out.add(usersRaw.get(0));
+            for (int i = 1; i < usersRaw.size(); i++) {
+                String[] row = usersRaw.get(i);
+                if (row.length >= 1 && username.equals(String.valueOf(row[0]).trim())) continue;
+                out.add(row);
+            }
+            CSVHandler.writeCSV("data/users.csv", out);
+        }
+    }
+
     private void redoPayroll() {
         // For demonstration only: resets all payrolls for the current month to Pending
         String month = currentMonth();
@@ -916,15 +982,28 @@ public class AdminDashboard extends JFrame {
         return ids;
     }
 
-    private Path exportCsvCopy(String sourcePath, String prefix) throws IOException {
+    private Path exportCsvWithChooser(String sourcePath, String prefix) throws IOException {
         Path exportsDir = Paths.get("exports");
         Files.createDirectories(exportsDir);
         String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path out = exportsDir.resolve(prefix + "_" + ts + ".csv");
+        String defaultName = prefix + "_" + ts + ".csv";
+
+        JFileChooser chooser = new JFileChooser(exportsDir.toFile());
+        chooser.setDialogTitle("Save CSV Export");
+        chooser.setSelectedFile(new File(exportsDir.toFile(), defaultName));
+
+        int res = chooser.showSaveDialog(this);
+        if (res != JFileChooser.APPROVE_OPTION) return null;
+
+        File chosen = chooser.getSelectedFile();
+        String path = chosen.getAbsolutePath();
+        if (!path.toLowerCase().endsWith(".csv")) {
+            chosen = new File(path + ".csv");
+        }
 
         java.util.List<String[]> data = CSVHandler.readCSV(sourcePath);
-        CSVHandler.writeCSV(out.toString(), data);
-        return out;
+        CSVHandler.writeCSV(chosen.getAbsolutePath(), data);
+        return chosen.toPath();
     }
 }
 
