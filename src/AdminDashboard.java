@@ -1,36 +1,53 @@
 import javax.swing.*;
+import javax.swing.table.*;
 import java.awt.*;
-import java.awt.event.*;
 import java.util.*;
-import javax.swing.table.DefaultTableModel;
 
 public class AdminDashboard extends JFrame {
-    private User admin;
+    private final User admin;
+
     private java.util.List<Employee> employees;
     private java.util.List<Payroll> payrolls;
+
     private JTable employeeTable;
+    private DefaultTableModel employeeModel;
+
     private JTable payrollTable;
-    private DefaultTableModel empModel;
     private DefaultTableModel payrollModel;
+
+    // Right-side control panel (salary edit + flagged)
+    private JPanel employeeControlPanel;
+    private JTextField salaryField;
+    private JCheckBox flaggedCheckBox;
+    private JButton updateSalaryBtn;
+
+    // Table filtering widgets
+    private JTextField searchField;
+    private JComboBox<String> flaggedFilter;
+
+    // Index in employees list (model index)
+    private int selectedEmployeeModelIndex = -1;
 
     public AdminDashboard(User admin) {
         this.admin = admin;
+
         setTitle("Admin Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(800, 600);
+        setSize(980, 650);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        // Top panel with logout
         JPanel topPanel = new JPanel(new BorderLayout());
         JLabel welcome = new JLabel("Welcome, Admin: " + this.admin.getUsername());
         JButton logoutBtn = new JButton("Logout");
-        logoutBtn.addActionListener(e -> { dispose(); new LoginFrame(); });
+        logoutBtn.addActionListener(e -> {
+            dispose();
+            new LoginFrame();
+        });
         topPanel.add(welcome, BorderLayout.WEST);
         topPanel.add(logoutBtn, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
-        // Tabs for Employees and Payroll
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Employees", employeePanel());
         tabs.addTab("Payroll", payrollPanel());
@@ -42,41 +59,208 @@ public class AdminDashboard extends JFrame {
     private JPanel employeePanel() {
         JPanel panel = new JPanel(new BorderLayout());
         employees = loadEmployees();
-        String[] columns = {"ID", "Name", "Position", "Basic Salary"};
-        empModel = new DefaultTableModel(columns, 0);
-        for (Employee emp : employees) {
-            empModel.addRow(new Object[]{emp.getId(), emp.getName(), emp.getPosition(), formatCurrency(emp.getBasicSalary())});
-        }
-        employeeTable = new JTable(empModel);
-        panel.add(new JScrollPane(employeeTable), BorderLayout.CENTER);
 
-        JPanel btnPanel = new JPanel();
+        JPanel leftPanel = new JPanel(new BorderLayout());
+
+        // Search + filter (top)
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        filterPanel.add(new JLabel("Search:"));
+        searchField = new JTextField(18);
+        filterPanel.add(searchField);
+
+        filterPanel.add(new JLabel("Flagged:"));
+        flaggedFilter = new JComboBox<>(new String[]{"All", "Flagged Only"});
+        filterPanel.add(flaggedFilter);
+
+        JButton refreshBtn = new JButton("Refresh");
+        filterPanel.add(refreshBtn);
+
+        leftPanel.add(filterPanel, BorderLayout.NORTH);
+
+        // Table model includes a hidden-ish flagged column for filtering/rendering
+        String[] columns = {"ID", "Name", "Position", "Basic Salary", "Flagged"};
+        employeeModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        for (Employee emp : employees) {
+            employeeModel.addRow(new Object[]{
+                    emp.getId(),
+                    emp.getName(),
+                    emp.getPosition(),
+                    formatCurrencyPHP(emp.getBasicSalary()),
+                    emp.isFlagged() ? 1 : 0
+            });
+        }
+
+        employeeTable = new JTable(employeeModel);
+        employeeTable.setAutoCreateRowSorter(true);
+
+        // Row coloring for flagged employees
+        employeeTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                int modelRow = table.convertRowIndexToModel(row);
+                Object flaggedVal = table.getModel().getValueAt(modelRow, 4);
+
+                boolean flagged = false;
+                if (flaggedVal instanceof Integer) flagged = ((Integer) flaggedVal) == 1;
+                else if (flaggedVal instanceof Boolean) flagged = (Boolean) flaggedVal;
+
+                if (!isSelected && flagged) {
+                    c.setBackground(new Color(255, 200, 200));
+                } else {
+                    if (!isSelected) c.setBackground(Color.WHITE);
+                }
+                return c;
+            }
+        });
+
+        // Selection listener: right control panel updates
+        employeeTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        employeeTable.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int viewRow = employeeTable.getSelectedRow();
+            if (viewRow < 0) {
+                selectedEmployeeModelIndex = -1;
+                employeeControlPanel.setVisible(false);
+                return;
+            }
+            selectedEmployeeModelIndex = employeeTable.convertRowIndexToModel(viewRow);
+            populateEmployeeControlFromSelected();
+        });
+
+        leftPanel.add(new JScrollPane(employeeTable), BorderLayout.CENTER);
+
+        // Bottom buttons (Add/Delete)
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton addBtn = new JButton("Add");
-        JButton editBtn = new JButton("Edit");
         JButton delBtn = new JButton("Delete");
-        btnPanel.add(addBtn); btnPanel.add(editBtn); btnPanel.add(delBtn);
-        panel.add(btnPanel, BorderLayout.SOUTH);
+        btnPanel.add(addBtn);
+        btnPanel.add(delBtn);
+        leftPanel.add(btnPanel, BorderLayout.SOUTH);
 
         addBtn.addActionListener(e -> addEmployee());
-        editBtn.addActionListener(e -> editEmployee());
-        delBtn.addActionListener(e -> deleteEmployee());
+        delBtn.addActionListener(e -> deleteSelectedEmployee());
+
+        // Right-side control panel
+        employeeControlPanel = new JPanel();
+        employeeControlPanel.setPreferredSize(new Dimension(320, 0));
+        employeeControlPanel.setBorder(BorderFactory.createTitledBorder("Employee Control"));
+        employeeControlPanel.setLayout(new BoxLayout(employeeControlPanel, BoxLayout.Y_AXIS));
+
+        employeeControlPanel.add(new JLabel("Select an employee row"));
+        employeeControlPanel.add(Box.createVerticalStrut(10));
+        employeeControlPanel.add(new JLabel("Basic Salary (PHP):"));
+        salaryField = new JTextField();
+        employeeControlPanel.add(salaryField);
+
+        employeeControlPanel.add(Box.createVerticalStrut(10));
+        flaggedCheckBox = new JCheckBox("Flagged (disable auto payment)");
+        employeeControlPanel.add(flaggedCheckBox);
+
+        employeeControlPanel.add(Box.createVerticalStrut(10));
+        updateSalaryBtn = new JButton("Update Salary / Save Flag");
+        employeeControlPanel.add(updateSalaryBtn);
+
+        flaggedCheckBox.addActionListener(ev -> {
+            if (selectedEmployeeModelIndex < 0) return;
+            syncFlagToModelAndEmployee();
+        });
+
+        updateSalaryBtn.addActionListener(ev -> {
+            if (selectedEmployeeModelIndex < 0) return;
+            syncSalaryToModelAndEmployee();
+        });
+
+        employeeControlPanel.setVisible(false);
+
+        // Sort/filter wiring
+        TableRowSorter<DefaultTableModel> sorter = (TableRowSorter<DefaultTableModel>) employeeTable.getRowSorter();
+
+        refreshBtn.addActionListener(e -> {
+            dispose();
+            new AdminDashboard(admin);
+        });
+
+        Runnable applyFilters = () -> {
+            String text = (searchField.getText() == null) ? "" : searchField.getText().trim().toLowerCase();
+            boolean onlyFlagged = "Flagged Only".equals(String.valueOf(flaggedFilter.getSelectedItem()));
+
+            sorter.setRowFilter(new RowFilter<DefaultTableModel, Integer>() {
+                @Override
+                public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+                    String id = String.valueOf(entry.getValue(0));
+                    String name = String.valueOf(entry.getValue(1));
+                    String pos = String.valueOf(entry.getValue(2));
+                    int flaggedVal = Integer.parseInt(String.valueOf(entry.getValue(4)));
+
+                    boolean matchesText = text.isEmpty()
+                            || id.toLowerCase().contains(text)
+                            || name.toLowerCase().contains(text)
+                            || pos.toLowerCase().contains(text);
+                    boolean matchesFlag = !onlyFlagged || flaggedVal == 1;
+                    return matchesText && matchesFlag;
+                }
+            });
+        };
+
+        searchField.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                applyFilters.run();
+            }
+        });
+        flaggedFilter.addActionListener(e -> applyFilters.run());
+
+        panel.add(leftPanel, BorderLayout.CENTER);
+        panel.add(employeeControlPanel, BorderLayout.EAST);
         return panel;
     }
 
     private JPanel payrollPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         payrolls = loadPayrolls();
+
         String[] columns = {"Payroll ID", "Employee ID", "Month", "Basic Salary", "Deductions", "Net Pay", "Status"};
-        payrollModel = new DefaultTableModel(columns, 0);
+        payrollModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
         for (Payroll p : payrolls) {
-            payrollModel.addRow(new Object[]{p.getPayrollId(), p.getEmployeeId(), p.getMonth(), formatCurrency(p.getBasicSalary()), formatCurrency(p.getDeductions()), formatCurrency(p.getNetPay()), p.getStatus()});
+            payrollModel.addRow(new Object[]{
+                    p.getPayrollId(),
+                    p.getEmployeeId(),
+                    p.getMonth(),
+                    formatCurrencyPHP(p.getBasicSalary()),
+                    formatCurrencyPHP(p.getDeductions()),
+                    formatCurrencyPHP(p.getNetPay()),
+                    p.getStatus()
+            });
         }
+
         payrollTable = new JTable(payrollModel);
         panel.add(new JScrollPane(payrollTable), BorderLayout.CENTER);
 
-        JButton processBtn = new JButton("Process Payroll");
-        processBtn.addActionListener(e -> processPayroll());
-        panel.add(processBtn, BorderLayout.SOUTH);
+        // Presentation buttons
+        JPanel southPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton startBtn = new JButton("Start Payroll");
+        startBtn.addActionListener(e -> processPayroll());
+
+        JButton redoBtn = new JButton("Redo Payroll");
+        redoBtn.addActionListener(e -> redoPayroll());
+
+        southPanel.add(startBtn);
+        southPanel.add(redoBtn);
+        panel.add(southPanel, BorderLayout.SOUTH);
+
         return panel;
     }
 
@@ -85,7 +269,14 @@ public class AdminDashboard extends JFrame {
         java.util.List<String[]> data = CSVHandler.readCSV("data/employees.csv");
         for (int i = 1; i < data.size(); i++) {
             String[] row = data.get(i);
-            list.add(new Employee(row[0], row[1], row[2], Double.parseDouble(row[3])));
+            if (row.length < 4) continue;
+
+            boolean flagged = false;
+            if (row.length >= 5) {
+                flagged = "1".equals(String.valueOf(row[4])) || "true".equalsIgnoreCase(String.valueOf(row[4]));
+            }
+
+            list.add(new Employee(row[0], row[1], row[2], Double.parseDouble(row[3]), flagged));
         }
         return list;
     }
@@ -95,84 +286,282 @@ public class AdminDashboard extends JFrame {
         java.util.List<String[]> data = CSVHandler.readCSV("data/payroll.csv");
         for (int i = 1; i < data.size(); i++) {
             String[] r = data.get(i);
-            list.add(new Payroll(r[0], r[1], r[2], Double.parseDouble(r[3]), Double.parseDouble(r[4]), Double.parseDouble(r[5]), r[6]));
+            if (r.length < 7) continue;
+            list.add(new Payroll(r[0], r[1], r[2],
+                    Double.parseDouble(r[3]),
+                    Double.parseDouble(r[4]),
+                    Double.parseDouble(r[5]),
+                    r[6]));
         }
         return list;
     }
 
-    private String formatCurrency(double amount) {
-        return "₱" + String.format("%,.2f", amount);
+    private String formatCurrencyPHP(double amount) {
+        return "PHP " + String.format("%,.2f", amount);
     }
 
     private void addEmployee() {
         JTextField idField = new JTextField();
         JTextField nameField = new JTextField();
         JTextField posField = new JTextField();
-        JTextField salaryField = new JTextField();
-        Object[] fields = {"ID:", idField, "Name:", nameField, "Position:", posField, "Basic Salary:", salaryField};
+        JTextField salaryFieldInput = new JTextField();
+
+        Object[] fields = {
+                "ID:", idField,
+                "Name:", nameField,
+                "Position:", posField,
+                "Basic Salary:", salaryFieldInput
+        };
+
         int res = JOptionPane.showConfirmDialog(this, fields, "Add Employee", JOptionPane.OK_CANCEL_OPTION);
-        if (res == JOptionPane.OK_OPTION) {
-            Employee emp = new Employee(idField.getText(), nameField.getText(), posField.getText(), Double.parseDouble(salaryField.getText()));
-            employees.add(emp);
-            empModel.addRow(new Object[]{emp.getId(), emp.getName(), emp.getPosition(), emp.getBasicSalary()});
-            saveEmployees();
-        }
-    }
+        if (res != JOptionPane.OK_OPTION) return;
 
-    private void editEmployee() {
-        int row = employeeTable.getSelectedRow();
-        if (row == -1) return;
-        Employee emp = employees.get(row);
-        JTextField nameField = new JTextField(emp.getName());
-        JTextField posField = new JTextField(emp.getPosition());
-        JTextField salaryField = new JTextField(String.valueOf(emp.getBasicSalary()));
-        Object[] fields = {"Name:", nameField, "Position:", posField, "Basic Salary:", salaryField};
-        int res = JOptionPane.showConfirmDialog(this, fields, "Edit Employee", JOptionPane.OK_CANCEL_OPTION);
-        if (res == JOptionPane.OK_OPTION) {
-            emp.setName(nameField.getText());
-            emp.setPosition(posField.getText());
-            emp.setBasicSalary(Double.parseDouble(salaryField.getText()));
-            empModel.setValueAt(emp.getName(), row, 1);
-            empModel.setValueAt(emp.getPosition(), row, 2);
-            empModel.setValueAt(emp.getBasicSalary(), row, 3);
-            saveEmployees();
-        }
-    }
+        String id = idField.getText().trim();
+        String name = nameField.getText().trim();
+        String pos = posField.getText().trim();
+        double salary = Double.parseDouble(salaryFieldInput.getText().trim());
 
-    private void deleteEmployee() {
-        int row = employeeTable.getSelectedRow();
-        if (row == -1) return;
-        employees.remove(row);
-        empModel.removeRow(row);
+        Employee emp = new Employee(id, name, pos, salary, false);
+        employees.add(emp);
+
+        createEmployeeUserAccount(emp);
+        ensurePayrollForCurrentMonth(emp);
         saveEmployees();
+
+        dispose();
+        new AdminDashboard(admin);
+    }
+
+    private void deleteSelectedEmployee() {
+        int viewRow = employeeTable.getSelectedRow();
+        if (viewRow < 0) return;
+
+        int modelRow = employeeTable.convertRowIndexToModel(viewRow);
+        employees.remove(modelRow);
+        saveEmployees();
+
+        dispose();
+        new AdminDashboard(admin);
     }
 
     private void saveEmployees() {
         java.util.List<String[]> data = new ArrayList<>();
-        data.add(new String[]{"id","name","position","basicSalary"});
+        data.add(new String[]{"id", "name", "position", "basicSalary", "flagged"});
+
         for (Employee emp : employees) {
-            data.add(new String[]{emp.getId(), emp.getName(), emp.getPosition(), String.valueOf(emp.getBasicSalary())});
+            data.add(new String[]{
+                    emp.getId(),
+                    emp.getName(),
+                    emp.getPosition(),
+                    String.valueOf(emp.getBasicSalary()),
+                    emp.isFlagged() ? "1" : "0"
+            });
         }
         CSVHandler.writeCSV("data/employees.csv", data);
     }
 
-    private void processPayroll() {
-        int row = payrollTable.getSelectedRow();
-        if (row == -1) return;
-        Payroll p = payrolls.get(row);
-        if (!p.getStatus().equals("Processed")) {
-            p.setStatus("Processed");
-            payrollModel.setValueAt("Processed", row, 6);
-            savePayrolls();
+    private void populateEmployeeControlFromSelected() {
+        if (selectedEmployeeModelIndex < 0) return;
+
+        Employee emp = employees.get(selectedEmployeeModelIndex);
+        salaryField.setText(String.valueOf(emp.getBasicSalary()));
+        flaggedCheckBox.setSelected(emp.isFlagged());
+
+        employeeControlPanel.setVisible(true);
+        employeeControlPanel.revalidate();
+        employeeControlPanel.repaint();
+    }
+
+    private void syncFlagToModelAndEmployee() {
+        if (selectedEmployeeModelIndex < 0) return;
+
+        Employee emp = employees.get(selectedEmployeeModelIndex);
+        emp.setFlagged(flaggedCheckBox.isSelected());
+        saveEmployees();
+
+        // Update table value for flagged column
+        employeeModel.setValueAt(emp.isFlagged() ? 1 : 0, selectedEmployeeModelIndex, 4);
+        employeeTable.repaint();
+    }
+
+    private void syncSalaryToModelAndEmployee() {
+        if (selectedEmployeeModelIndex < 0) return;
+
+        Employee emp = employees.get(selectedEmployeeModelIndex);
+        double newSalary = Double.parseDouble(salaryField.getText().trim());
+        emp.setBasicSalary(newSalary);
+        saveEmployees();
+
+        // Update display column
+        employeeModel.setValueAt(formatCurrencyPHP(emp.getBasicSalary()), selectedEmployeeModelIndex, 3);
+        employeeTable.repaint();
+
+        ensurePayrollForCurrentMonth(emp);
+
+        dispose();
+        new AdminDashboard(admin);
+    }
+
+    private void createEmployeeUserAccount(Employee emp) {
+        String username = "emp" + emp.getId();
+        String password = "emp123";
+
+        java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
+        boolean exists = false;
+        for (int i = 1; i < data.size(); i++) {
+            String[] row = data.get(i);
+            if (row.length >= 1 && username.equals(row[0])) {
+                exists = true;
+                break;
+            }
         }
+
+        if (!exists) {
+            data.add(new String[]{username, password, "Employee"});
+            CSVHandler.writeCSV("data/users.csv", data);
+        }
+    }
+
+    private String currentMonth() {
+        Calendar cal = Calendar.getInstance();
+        int year = cal.get(Calendar.YEAR);
+        int month = cal.get(Calendar.MONTH) + 1;
+        return year + "-" + String.format("%02d", month);
+    }
+
+    private String currentDate() {
+        Calendar cal = Calendar.getInstance();
+        int year = cal.get(Calendar.YEAR);
+        int month = cal.get(Calendar.MONTH) + 1;
+        int day = cal.get(Calendar.DAY_OF_MONTH);
+        return String.format("%04d-%02d-%02d", year, month, day);
+    }
+
+    private void ensurePayrollForCurrentMonth(Employee emp) {
+        String month = currentMonth();
+
+        java.util.List<String[]> raw = CSVHandler.readCSV("data/payroll.csv");
+
+        int maxId = 0;
+        for (int i = 1; i < raw.size(); i++) {
+            String[] row = raw.get(i);
+            if (row.length >= 1) {
+                try {
+                    maxId = Math.max(maxId, Integer.parseInt(row[0]));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        boolean found = false;
+        for (int i = 1; i < raw.size(); i++) {
+            String[] r = raw.get(i);
+            if (r.length >= 3 && emp.getId().equals(r[1]) && month.equals(r[2])) {
+                found = true;
+
+                double deductions;
+                try {
+                    deductions = Double.parseDouble(r[4]);
+                } catch (Exception ex) {
+                    deductions = emp.getBasicSalary() * 0.0666667;
+                }
+
+                double net = emp.getBasicSalary() - deductions;
+                r[3] = String.valueOf(emp.getBasicSalary());
+                r[4] = String.valueOf(deductions);
+                r[5] = String.valueOf(net);
+                break;
+            }
+        }
+
+        if (!found) {
+            double deductions = emp.getBasicSalary() * 0.0666667;
+            double net = emp.getBasicSalary() - deductions;
+
+            raw.add(new String[]{
+                    String.valueOf(maxId + 1),
+                    emp.getId(),
+                    month,
+                    String.valueOf(emp.getBasicSalary()),
+                    String.valueOf(deductions),
+                    String.valueOf(net),
+                    "Pending"
+            });
+        }
+
+        CSVHandler.writeCSV("data/payroll.csv", raw);
     }
 
     private void savePayrolls() {
         java.util.List<String[]> data = new ArrayList<>();
-        data.add(new String[]{"payrollId","employeeId","month","basicSalary","deductions","netPay","status"});
+        data.add(new String[]{"payrollId", "employeeId", "month", "basicSalary", "deductions", "netPay", "status"});
+
+        payrolls = loadPayrolls();
         for (Payroll p : payrolls) {
-            data.add(new String[]{p.getPayrollId(), p.getEmployeeId(), p.getMonth(), String.valueOf(p.getBasicSalary()), String.valueOf(p.getDeductions()), String.valueOf(p.getNetPay()), p.getStatus()});
+            data.add(new String[]{
+                    p.getPayrollId(),
+                    p.getEmployeeId(),
+                    p.getMonth(),
+                    String.valueOf(p.getBasicSalary()),
+                    String.valueOf(p.getDeductions()),
+                    String.valueOf(p.getNetPay()),
+                    p.getStatus()
+            });
         }
         CSVHandler.writeCSV("data/payroll.csv", data);
     }
+
+    private void processPayroll() {
+        String month = currentMonth();
+        String date = currentDate();
+
+        payrolls = loadPayrolls();
+        boolean anyChanged = false;
+
+        for (Payroll p : payrolls) {
+            if (!month.equals(p.getMonth())) continue;
+
+            Employee emp = findEmployeeById(p.getEmployeeId());
+            if (emp != null && emp.isFlagged()) {
+                // Skip flagged employees (keep their status)
+                continue;
+            }
+
+            if (!"Processed".equalsIgnoreCase(p.getStatus())) {
+                p.setStatus("Processed");
+                anyChanged = true;
+            }
+        }
+
+        if (anyChanged) savePayrolls();
+
+        JOptionPane.showMessageDialog(this,
+                "Automation run for " + month + " (prototype).\nFlagged employees were skipped.\nDate: " + date);
+
+        dispose();
+        new AdminDashboard(admin);
+    }
+
+    private void redoPayroll() {
+        String month = currentMonth();
+
+        payrolls = loadPayrolls();
+        for (Payroll p : payrolls) {
+            if (month.equals(p.getMonth())) {
+                p.setStatus("Pending");
+            }
+        }
+
+        savePayrolls();
+        processPayroll();
+    }
+
+    private Employee findEmployeeById(String empId) {
+        // ensure we use latest loaded employees
+        for (Employee e : employees) {
+            if (String.valueOf(e.getId()).equals(String.valueOf(empId))) return e;
+        }
+        return null;
+    }
 }
+
