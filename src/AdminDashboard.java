@@ -227,15 +227,31 @@ public class AdminDashboard extends JFrame {
         };
 
         for (Payroll p : payrolls) {
-            payrollModel.addRow(new Object[]{
+            }
+
+            // Determine if all payrolls for the current month are still pending
+            boolean allPending = true;
+            for (Payroll p : payrolls) {
+                if (currentMonth().equals(p.getMonth()) && !"Pending".equalsIgnoreCase(p.getStatus())) {
+                    allPending = false;
+                    break;
+                }
+            }
+
+            for (Payroll p : payrolls) {
+                String statusToShow = p.getStatus();
+                if (allPending && currentMonth().equals(p.getMonth())) {
+                    statusToShow = "Pending";
+                }
+                payrollModel.addRow(new Object[]{
                     p.getPayrollId(),
                     p.getEmployeeId(),
                     p.getMonth(),
                     formatCurrencyPHP(p.getBasicSalary()),
                     formatCurrencyPHP(p.getDeductions()),
                     formatCurrencyPHP(p.getNetPay()),
-                    p.getStatus()
-            });
+                    statusToShow
+                });
         }
 
         payrollTable = new JTable(payrollModel);
