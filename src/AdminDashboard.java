@@ -2,6 +2,7 @@ import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.util.*;
+import EmployeeControlPanel;
 
 public class AdminDashboard extends JFrame {
     private final User admin;
@@ -16,10 +17,7 @@ public class AdminDashboard extends JFrame {
     private DefaultTableModel payrollModel;
 
     // Right-side control panel (salary edit + flagged)
-    private JPanel employeeControlPanel;
-    private JTextField salaryField;
-    private JCheckBox flaggedCheckBox;
-    private JButton updateSalaryBtn;
+    private EmployeeControlPanel employeeControlPanel;
 
     // Table filtering widgets
     private JTextField searchField;
@@ -127,11 +125,11 @@ public class AdminDashboard extends JFrame {
             int viewRow = employeeTable.getSelectedRow();
             if (viewRow < 0) {
                 selectedEmployeeModelIndex = -1;
-                employeeControlPanel.setVisible(false);
+                employeeControlPanel.updateFromEmployee(null, -1);
                 return;
             }
             selectedEmployeeModelIndex = employeeTable.convertRowIndexToModel(viewRow);
-            populateEmployeeControlFromSelected();
+            employeeControlPanel.updateFromEmployee(employees.get(selectedEmployeeModelIndex), selectedEmployeeModelIndex);
         });
 
         leftPanel.add(new JScrollPane(employeeTable), BorderLayout.CENTER);
@@ -148,36 +146,7 @@ public class AdminDashboard extends JFrame {
         delBtn.addActionListener(e -> deleteSelectedEmployee());
 
         // Right-side control panel
-        employeeControlPanel = new JPanel();
-        employeeControlPanel.setPreferredSize(new Dimension(320, 0));
-        employeeControlPanel.setBorder(BorderFactory.createTitledBorder("Employee Control"));
-        employeeControlPanel.setLayout(new BoxLayout(employeeControlPanel, BoxLayout.Y_AXIS));
-
-        employeeControlPanel.add(new JLabel("Select an employee row"));
-        employeeControlPanel.add(Box.createVerticalStrut(10));
-        employeeControlPanel.add(new JLabel("Basic Salary (PHP):"));
-        salaryField = new JTextField();
-        employeeControlPanel.add(salaryField);
-
-        employeeControlPanel.add(Box.createVerticalStrut(10));
-        flaggedCheckBox = new JCheckBox("Flagged (disable auto payment)");
-        employeeControlPanel.add(flaggedCheckBox);
-
-        employeeControlPanel.add(Box.createVerticalStrut(10));
-        updateSalaryBtn = new JButton("Update Salary / Save Flag");
-        employeeControlPanel.add(updateSalaryBtn);
-
-        flaggedCheckBox.addActionListener(ev -> {
-            if (selectedEmployeeModelIndex < 0) return;
-            syncFlagToModelAndEmployee();
-        });
-
-        updateSalaryBtn.addActionListener(ev -> {
-            if (selectedEmployeeModelIndex < 0) return;
-            syncSalaryToModelAndEmployee();
-        });
-
-        employeeControlPanel.setVisible(false);
+        employeeControlPanel = new EmployeeControlPanel(this);
 
         // Sort/filter wiring
         TableRowSorter<DefaultTableModel> sorter = (TableRowSorter<DefaultTableModel>) employeeTable.getRowSorter();
@@ -360,44 +329,26 @@ public class AdminDashboard extends JFrame {
         CSVHandler.writeCSV("data/employees.csv", data);
     }
 
-    private void populateEmployeeControlFromSelected() {
-        if (selectedEmployeeModelIndex < 0) return;
 
-        Employee emp = employees.get(selectedEmployeeModelIndex);
-        salaryField.setText(String.valueOf(emp.getBasicSalary()));
-        flaggedCheckBox.setSelected(emp.isFlagged());
-
-        employeeControlPanel.setVisible(true);
-        employeeControlPanel.revalidate();
-        employeeControlPanel.repaint();
-    }
-
-    private void syncFlagToModelAndEmployee() {
-        if (selectedEmployeeModelIndex < 0) return;
-
-        Employee emp = employees.get(selectedEmployeeModelIndex);
-        emp.setFlagged(flaggedCheckBox.isSelected());
+    // Called by EmployeeControlPanel
+    public void syncFlagToModelAndEmployee(int modelIndex, boolean flagged) {
+        if (modelIndex < 0) return;
+        Employee emp = employees.get(modelIndex);
+        emp.setFlagged(flagged);
         saveEmployees();
-
-        // Update table value for flagged column
-        employeeModel.setValueAt(emp.isFlagged() ? 1 : 0, selectedEmployeeModelIndex, 4);
+        employeeModel.setValueAt(emp.isFlagged() ? 1 : 0, modelIndex, 4);
         employeeTable.repaint();
     }
 
-    private void syncSalaryToModelAndEmployee() {
-        if (selectedEmployeeModelIndex < 0) return;
-
-        Employee emp = employees.get(selectedEmployeeModelIndex);
-        double newSalary = Double.parseDouble(salaryField.getText().trim());
+    // Called by EmployeeControlPanel
+    public void syncSalaryToModelAndEmployee(int modelIndex, double newSalary) {
+        if (modelIndex < 0) return;
+        Employee emp = employees.get(modelIndex);
         emp.setBasicSalary(newSalary);
         saveEmployees();
-
-        // Update display column
-        employeeModel.setValueAt(formatCurrencyPHP(emp.getBasicSalary()), selectedEmployeeModelIndex, 3);
+        employeeModel.setValueAt(formatCurrencyPHP(emp.getBasicSalary()), modelIndex, 3);
         employeeTable.repaint();
-
         ensurePayrollForCurrentMonth(emp);
-
         dispose();
         new AdminDashboard(admin);
     }

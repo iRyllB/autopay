@@ -28,6 +28,15 @@ public class EmployeeDashboard extends JFrame {
         employee = findEmployee(user.getUsername());
         payrolls = loadPayrolls(employee.getId());
 
+        // Show flagged warning if employee is flagged
+        if (employee != null && employee.isFlagged()) {
+            JPanel flaggedPanel = new JPanel();
+            flaggedPanel.setBackground(new Color(255, 220, 220));
+            flaggedPanel.setBorder(BorderFactory.createLineBorder(Color.RED));
+            flaggedPanel.add(new JLabel("You have been flagged. For more information, please contact management +639123456788."));
+            add(flaggedPanel, BorderLayout.SOUTH);
+        }
+
         JPanel infoPanel = new JPanel(new GridLayout(0, 1));
         infoPanel.setBorder(BorderFactory.createTitledBorder("Payroll Details"));
         for (Payroll p : payrolls) {
@@ -52,7 +61,11 @@ public class EmployeeDashboard extends JFrame {
             String[] row = data.get(i);
             // For demo, assume username = emp1 → id=1, emp2 → id=2
             if (username.equals("emp" + row[0])) {
-                return new Employee(row[0], row[1], row[2], Double.parseDouble(row[3]));
+                boolean flagged = false;
+                if (row.length >= 5) {
+                    flagged = "1".equals(String.valueOf(row[4])) || "true".equalsIgnoreCase(String.valueOf(row[4]));
+                }
+                return new Employee(row[0], row[1], row[2], Double.parseDouble(row[3]), flagged);
             }
         }
         return null;
