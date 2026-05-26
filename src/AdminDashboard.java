@@ -38,7 +38,7 @@ public class AdminDashboard extends JFrame {
     public AdminDashboard(User admin) {
         this.admin = admin;
         // Initialize centralized storage if needed
-        DataStore.ensureInitialized(DataStore.currentMonth());
+        DataStore.normalize(DataStore.currentMonth());
 
         setTitle("Admin Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -306,6 +306,8 @@ public class AdminDashboard extends JFrame {
         TableRowSorter<DefaultTableModel> payrollSorter = (TableRowSorter<DefaultTableModel>) payrollTable.getRowSorter();
         payrollSorter.setComparator(0, (a, b) -> {
             try {
+                if (a == null || String.valueOf(a).trim().isEmpty()) return -1;
+                if (b == null || String.valueOf(b).trim().isEmpty()) return 1;
                 return Integer.compare(Integer.parseInt(a.toString()), Integer.parseInt(b.toString()));
             } catch (Exception e) {
                 return a.toString().compareTo(b.toString());
@@ -612,6 +614,12 @@ public class AdminDashboard extends JFrame {
                 statusToShow
             });
         }
+
+        // Re-evaluate sort/filter after reload
+        if (payrollTable != null && payrollTable.getRowSorter() instanceof TableRowSorter) {
+            ((TableRowSorter<?>) payrollTable.getRowSorter()).sort();
+        }
+        payrollTable.repaint();
     }
 
     private void refreshEmployeesTable() {
@@ -641,6 +649,7 @@ public class AdminDashboard extends JFrame {
     }
 
     private void refreshAllFromCsv() {
+        DataStore.normalize(DataStore.currentMonth());
         refreshEmployeesTable();
         refreshPayrollTable();
     }

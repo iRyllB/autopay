@@ -25,6 +25,7 @@ public class EmployeeDashboard extends JFrame {
         setLayout(new BorderLayout());
 
         // Load employee info first
+        DataStore.normalize(DataStore.currentMonth());
         employee = DataStore.findEmployeeByUsername(DataStore.currentMonth(), user.getUsername());
         payrolls = (employee == null) ? new ArrayList<>() : DataStore.loadPayrollsForEmployee(DataStore.currentMonth(), employee.getId());
         hasPayoutAccount = employee != null && hasPayoutAccount(employee.getId());

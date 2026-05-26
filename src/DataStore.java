@@ -60,11 +60,17 @@ public class DataStore {
             // Load payroll by employeeId+month
             Map<String, String[]> payrollByEmpMonth = new HashMap<>();
             List<String[]> payroll = CSVHandler.readCSV("data/payroll.csv");
+            int maxPayrollId = 0;
             for (int i = 1; i < payroll.size(); i++) {
                 String[] r = payroll.get(i);
                 if (r.length < 7) continue;
                 payrollByEmpMonth.put(key(r[1], r[2]), r);
+                try {
+                    maxPayrollId = Math.max(maxPayrollId, Integer.parseInt(String.valueOf(r[0]).trim()));
+                } catch (Exception ignored) {
+                }
             }
+            int nextPayrollId = maxPayrollId + 1;
 
             for (Employee e : employees) {
                 String username = (e.getFirstName() == null) ? "" : e.getFirstName().trim();
@@ -86,7 +92,7 @@ public class DataStore {
                             e.getId(), e.getFirstName(), e.getLastName(), e.getPosition(),
                             String.valueOf(e.getBasicSalary()), e.isFlagged() ? "1" : "0",
                             username, password, role,
-                            "", currentMonth, String.valueOf(e.getBasicSalary()),
+                            String.valueOf(nextPayrollId++), currentMonth, String.valueOf(e.getBasicSalary()),
                             String.valueOf(deductions), String.valueOf(net), "Pending"
                     });
                 } else {
@@ -102,6 +108,60 @@ public class DataStore {
             CSVHandler.writeCSV(MASTER_PATH, out);
         } catch (Exception ignored) {
         }
+    }
+
+    // Ensures every employee has a current-month payroll row and a payrollId.
+    public static void normalize(String currentMonth) {
+        ensureInitialized(currentMonth);
+        List<String[]> data = CSVHandler.readCSV(MASTER_PATH);
+        if (data.size() <= 1) return;
+
+        int nextPayrollId = nextPayrollId(data);
+        Map<String, String> passwordByEmpId = new HashMap<>();
+        Set<String> employeeIds = new LinkedHashSet<>();
+
+        for (int i = 1; i < data.size(); i++) {
+            String[] r = data.get(i);
+            if (r.length < 15) continue;
+            if (!"Employee".equalsIgnoreCase(String.valueOf(r[8]).trim())) continue;
+            String empId = String.valueOf(r[0]).trim();
+            employeeIds.add(empId);
+            passwordByEmpId.put(empId, r[7]);
+
+            if (String.valueOf(r[10]).trim().equals(currentMonth) && String.valueOf(r[9]).trim().isEmpty()) {
+                r[9] = String.valueOf(nextPayrollId++);
+            }
+        }
+
+        // Ensure current month row exists for each employee
+        for (String empId : employeeIds) {
+            boolean hasMonth = false;
+            String[] anyRow = null;
+            for (int i = 1; i < data.size(); i++) {
+                String[] r = data.get(i);
+                if (r.length < 15) continue;
+                if (!empId.equals(String.valueOf(r[0]).trim())) continue;
+                anyRow = r;
+                if (currentMonth.equals(String.valueOf(r[10]).trim())) {
+                    hasMonth = true;
+                    break;
+                }
+            }
+            if (!hasMonth && anyRow != null) {
+                double salary = parseDoubleSafe(anyRow[4]);
+                double deductions = salary * 0.0666667;
+                double net = salary - deductions;
+                data.add(new String[]{
+                        empId, anyRow[1], anyRow[2], anyRow[3],
+                        String.valueOf(salary), anyRow[5],
+                        anyRow[6], passwordByEmpId.getOrDefault(empId, String.valueOf(anyRow[6]) + "123"), "Employee",
+                        String.valueOf(nextPayrollId++), currentMonth,
+                        String.valueOf(salary), String.valueOf(deductions), String.valueOf(net), "Pending"
+                });
+            }
+        }
+
+        CSVHandler.writeCSV(MASTER_PATH, data);
     }
 
     public static List<User> loadUsers(String currentMonth) {
