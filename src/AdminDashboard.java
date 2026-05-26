@@ -2,8 +2,7 @@ import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.util.*;
-import EmployeeControlPanel;
-import AdminSettingsPanel;
+
 
 public class AdminDashboard extends JFrame {
     private final User admin;
@@ -50,8 +49,13 @@ public class AdminDashboard extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Employees", employeePanel());
         tabs.addTab("Payroll", payrollPanel());
-        tabs.addTab("Settings", new AdminSettingsPanel(admin));
         add(tabs, BorderLayout.CENTER);
+
+        setVisible(true);
+    // Static method to update admin password in users.csv
+
+    }
+
     // Static method to update admin password in users.csv
     public static void updateAdminPassword(String username, String newPassword) {
         java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
@@ -63,9 +67,6 @@ public class AdminDashboard extends JFrame {
             }
         }
         CSVHandler.writeCSV("data/users.csv", data);
-    }
-
-        setVisible(true);
     }
 
     private JPanel employeePanel() {
@@ -489,44 +490,65 @@ public class AdminDashboard extends JFrame {
         String date = currentDate();
 
         payrolls = loadPayrolls();
-        boolean anyChanged = false;
-
+        double totalToPay = 0.0;
+        int countToProcess = 0;
         for (Payroll p : payrolls) {
             if (!month.equals(p.getMonth())) continue;
-
             Employee emp = findEmployeeById(p.getEmployeeId());
             if (emp != null && emp.isFlagged()) {
-                // Skip flagged employees (keep their status)
                 continue;
             }
+            if (!"Processed".equalsIgnoreCase(p.getStatus())) {
+                totalToPay += p.getNetPay();
+                countToProcess++;
+            }
+        }
 
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "You are about to process payroll for " + countToProcess + " employees.\n"
+                + "Total to be paid out: " + formatCurrencyPHP(totalToPay) + "\nContinue?",
+                "Confirm Payroll Processing",
+                JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        boolean anyChanged = false;
+        for (Payroll p : payrolls) {
+            if (!month.equals(p.getMonth())) continue;
+            Employee emp = findEmployeeById(p.getEmployeeId());
+            if (emp != null && emp.isFlagged()) {
+                continue;
+            }
             if (!"Processed".equalsIgnoreCase(p.getStatus())) {
                 p.setStatus("Processed");
                 anyChanged = true;
             }
         }
-
         if (anyChanged) savePayrolls();
 
         JOptionPane.showMessageDialog(this,
-                "Automation run for " + month + " (prototype).\nFlagged employees were skipped.\nDate: " + date);
+                "Payroll processed for " + countToProcess + " employees.\nFlagged employees were skipped.\nTotal paid: " + formatCurrencyPHP(totalToPay) + "\nDate: " + date);
 
         dispose();
         new AdminDashboard(admin);
     }
 
     private void redoPayroll() {
+        // For demonstration only: resets all payrolls for the current month to Pending
         String month = currentMonth();
-
         payrolls = loadPayrolls();
+        int resetCount = 0;
         for (Payroll p : payrolls) {
             if (month.equals(p.getMonth())) {
                 p.setStatus("Pending");
+                resetCount++;
             }
         }
-
         savePayrolls();
-        processPayroll();
+        JOptionPane.showMessageDialog(this, "Payroll statuses reset to Pending for demonstration. (" + resetCount + " records)");
+        dispose();
+        new AdminDashboard(admin);
     }
 
     private Employee findEmployeeById(String empId) {

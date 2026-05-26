@@ -28,6 +28,25 @@ public class EmployeeDashboard extends JFrame {
         employee = findEmployee(user.getUsername());
         payrolls = loadPayrolls(employee.getId());
 
+        // Main tabbed pane
+        JTabbedPane tabs = new JTabbedPane();
+
+        // Payroll tab
+        JPanel infoPanel = new JPanel(new GridLayout(0, 1));
+        infoPanel.setBorder(BorderFactory.createTitledBorder("Payroll Details"));
+        for (Payroll p : payrolls) {
+            infoPanel.add(new JLabel("Month: " + p.getMonth()));
+            infoPanel.add(new JLabel("Basic Salary: " + formatCurrency(p.getBasicSalary())));
+            infoPanel.add(new JLabel("Deductions: " + formatCurrency(p.getDeductions())));
+            infoPanel.add(new JLabel("Net Pay: " + formatCurrency(p.getNetPay())));
+            infoPanel.add(new JLabel("Status: " + p.getStatus()));
+            infoPanel.add(new JLabel("----------------------"));
+        }
+        tabs.addTab("Payroll", infoPanel);
+
+        // Settings tab
+        tabs.addTab("Settings", new EmployeeSettingsPanel(employeeUser));
+
         // Show flagged warning if employee is flagged (top box)
         if (employee != null && employee.isFlagged()) {
             JPanel flaggedPanel = new JPanel();
@@ -39,17 +58,7 @@ public class EmployeeDashboard extends JFrame {
             add(flaggedBox, BorderLayout.NORTH);
         }
 
-        JPanel infoPanel = new JPanel(new GridLayout(0, 1));
-        infoPanel.setBorder(BorderFactory.createTitledBorder("Payroll Details"));
-        for (Payroll p : payrolls) {
-            infoPanel.add(new JLabel("Month: " + p.getMonth()));
-            infoPanel.add(new JLabel("Basic Salary: " + formatCurrency(p.getBasicSalary())));
-            infoPanel.add(new JLabel("Deductions: " + formatCurrency(p.getDeductions())));
-            infoPanel.add(new JLabel("Net Pay: " + formatCurrency(p.getNetPay())));
-            infoPanel.add(new JLabel("Status: " + p.getStatus()));
-            infoPanel.add(new JLabel("----------------------"));
-        }
-        add(infoPanel, BorderLayout.CENTER);
+        add(tabs, BorderLayout.CENTER);
         setVisible(true);
     }
 
