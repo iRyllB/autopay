@@ -576,6 +576,8 @@ public class AdminDashboard extends JFrame {
         Employee emp = new Employee(id, firstName, lastName, pos, salary, false);
         employees.add(emp);
 
+        // If an ID is reused, clear any old payroll/payout records for that ID
+        deleteEmployeeReferencesById(emp.getId());
         createEmployeeUserAccount(emp);
         ensurePayrollForCurrentMonth(emp);
         saveEmployees();
@@ -710,12 +712,8 @@ public class AdminDashboard extends JFrame {
             if (r.length >= 3 && emp.getId().equals(r[1]) && month.equals(r[2])) {
                 found = true;
 
-                double deductions;
-                try {
-                    deductions = Double.parseDouble(r[4]);
-                } catch (Exception ex) {
-                    deductions = emp.getBasicSalary() * 0.0666667;
-                }
+                // Always recompute payroll amounts from the latest salary
+                double deductions = emp.getBasicSalary() * 0.0666667;
 
                 double net = emp.getBasicSalary() - deductions;
                 r[3] = String.valueOf(emp.getBasicSalary());
@@ -944,6 +942,34 @@ public class AdminDashboard extends JFrame {
                 out.add(row);
             }
             CSVHandler.writeCSV("data/users.csv", out);
+        }
+    }
+
+    private void deleteEmployeeReferencesById(String empIdRaw) {
+        String empId = String.valueOf(empIdRaw).trim();
+
+        java.util.List<String[]> payrollRaw = CSVHandler.readCSV("data/payroll.csv");
+        if (payrollRaw.size() > 1) {
+            java.util.List<String[]> out = new ArrayList<>();
+            out.add(payrollRaw.get(0));
+            for (int i = 1; i < payrollRaw.size(); i++) {
+                String[] row = payrollRaw.get(i);
+                if (row.length >= 2 && empId.equals(String.valueOf(row[1]).trim())) continue;
+                out.add(row);
+            }
+            CSVHandler.writeCSV("data/payroll.csv", out);
+        }
+
+        java.util.List<String[]> payoutRaw = CSVHandler.readCSV("data/payout_accounts.csv");
+        if (payoutRaw.size() > 1) {
+            java.util.List<String[]> out = new ArrayList<>();
+            out.add(payoutRaw.get(0));
+            for (int i = 1; i < payoutRaw.size(); i++) {
+                String[] row = payoutRaw.get(i);
+                if (row.length >= 1 && empId.equals(String.valueOf(row[0]).trim())) continue;
+                out.add(row);
+            }
+            CSVHandler.writeCSV("data/payout_accounts.csv", out);
         }
     }
 
