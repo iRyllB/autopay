@@ -80,13 +80,19 @@ public class AdminDashboard extends JFrame {
     }
 
     private void regenerateEmployeeUsersFromEmployeesCsv() {
-        // Preserve only admin account(s) from existing users.csv
+        // Preserve only admin account(s) and existing employee passwords from users.csv
         java.util.List<String[]> existing = CSVHandler.readCSV("data/users.csv");
         java.util.List<String[]> adminRows = new ArrayList<>();
+        java.util.Map<String, String> existingEmployeePasswords = new HashMap<>();
         for (int i = 1; i < existing.size(); i++) {
             String[] row = existing.get(i);
             if (row.length >= 3 && "Admin".equalsIgnoreCase(row[2])) {
                 adminRows.add(row);
+            }
+            if (row.length >= 3 && "Employee".equalsIgnoreCase(row[2])) {
+                String username = row[0];
+                String password = row[1];
+                existingEmployeePasswords.put(username, password);
             }
         }
 
@@ -115,7 +121,8 @@ public class AdminDashboard extends JFrame {
                 firstName = fullName.trim().split("\\s+")[0];
             }
             String username = firstName;
-            String password = firstName + "123";
+            // Keep any previously-changed password; otherwise fall back to default
+            String password = existingEmployeePasswords.getOrDefault(username, firstName + "123");
             newUsers.add(new String[]{username, password, "Employee"});
         }
 
@@ -363,14 +370,19 @@ public class AdminDashboard extends JFrame {
         payrollSorter.setSortKeys(java.util.List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
         payrollSorter.sort();
 
+        java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
         payrollTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 int modelRow = table.convertRowIndexToModel(row);
                 String status = String.valueOf(table.getModel().getValueAt(modelRow, 6));
-                if (!isSelected && "Pending".equalsIgnoreCase(status)) {
-                    c.setBackground(new Color(255, 220, 220));
+                String employeeId = String.valueOf(table.getModel().getValueAt(modelRow, 1));
+
+                if (!isSelected && "Pending".equalsIgnoreCase(status) && !payoutEmployeeIds.contains(employeeId)) {
+                    c.setBackground(new Color(255, 245, 170)); // yellow for missing payout account
+                } else if (!isSelected && "Pending".equalsIgnoreCase(status)) {
+                    c.setBackground(new Color(255, 220, 220)); // light red for pending
                 } else {
                     if (!isSelected) c.setBackground(Color.WHITE);
                 }
@@ -745,10 +757,16 @@ public class AdminDashboard extends JFrame {
         String date = currentDate();
 
         payrolls = loadPayrolls();
+        java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
         double totalToPay = 0.0;
         int countToProcess = 0;
+        int skippedNoAccount = 0;
         for (Payroll p : payrolls) {
             if (!month.equals(p.getMonth())) continue;
+            if (!payoutEmployeeIds.contains(String.valueOf(p.getEmployeeId()))) {
+                skippedNoAccount++;
+                continue;
+            }
             Employee emp = findEmployeeById(p.getEmployeeId());
             if (emp != null && emp.isFlagged()) {
                 continue;
@@ -771,6 +789,10 @@ public class AdminDashboard extends JFrame {
         boolean anyChanged = false;
         for (Payroll p : payrolls) {
             if (!month.equals(p.getMonth())) continue;
+            if (!payoutEmployeeIds.contains(String.valueOf(p.getEmployeeId()))) {
+                // No payout account: keep status Pending
+                continue;
+            }
             Employee emp = findEmployeeById(p.getEmployeeId());
             if (emp != null && emp.isFlagged()) {
                 continue;
@@ -784,7 +806,10 @@ public class AdminDashboard extends JFrame {
         savePayrolls();
 
         JOptionPane.showMessageDialog(this,
-                "Payroll processed for " + countToProcess + " employees.\nFlagged employees were skipped.\nTotal paid: " + formatCurrencyPHP(totalToPay) + "\nDate: " + date);
+                "Payroll processed for " + countToProcess + " employees.\n"
+                        + "Flagged employees were skipped.\n"
+                        + (skippedNoAccount > 0 ? ("Employees without payout accounts were skipped: " + skippedNoAccount + "\n") : "")
+                        + "Total paid: " + formatCurrencyPHP(totalToPay) + "\nDate: " + date);
 
         refreshPayrollTable();
     }
