@@ -1,7 +1,7 @@
 id,name,position,basicSalary,flagged
 1,John Doe,Teacher,30000.0,0
 2,Jane Smith,Accountant,35000.0,1
-3,Bryll,Engineer,50000.0,1
+3,Bryll,Engineer,50000.0,0
 4,Anna Cruz,HR,28000.0,0
 5,Mark Lee,Developer,42000.0,0
 6,Paula Reyes,Designer,31000.0,0

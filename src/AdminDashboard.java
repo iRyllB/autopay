@@ -541,7 +541,8 @@ public class AdminDashboard extends JFrame {
                 anyChanged = true;
             }
         }
-        if (anyChanged) savePayrolls();
+        // Always save payrolls, even if nothing changed, to guarantee CSV is up to date
+        savePayrolls();
 
         JOptionPane.showMessageDialog(this,
                 "Payroll processed for " + countToProcess + " employees.\nFlagged employees were skipped.\nTotal paid: " + formatCurrencyPHP(totalToPay) + "\nDate: " + date);

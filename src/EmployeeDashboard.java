@@ -8,6 +8,7 @@ public class EmployeeDashboard extends JFrame {
     private java.util.List<Payroll> payrolls;
 
     public EmployeeDashboard(User user) {
+
         this.employeeUser = user;
         setTitle("Employee Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -15,18 +16,21 @@ public class EmployeeDashboard extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
+        // Load employee info first
+        employee = findEmployee(user.getUsername());
+        payrolls = loadPayrolls(employee.getId());
+
         // Top panel with logout
         JPanel topPanel = new JPanel(new BorderLayout());
-        JLabel welcome = new JLabel("Welcome, Employee: " + user.getUsername());
+        String welcomeText = (employee != null)
+            ? ("Welcome, Employee: " + employee.getName())
+            : ("Welcome, Employee: " + user.getUsername());
+        JLabel welcome = new JLabel(welcomeText);
         JButton logoutBtn = new JButton("Logout");
         logoutBtn.addActionListener(e -> { dispose(); new LoginFrame(); });
         topPanel.add(welcome, BorderLayout.WEST);
         topPanel.add(logoutBtn, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
-
-        // Load employee info
-        employee = findEmployee(user.getUsername());
-        payrolls = loadPayrolls(employee.getId());
 
         // Main tabbed pane
         JTabbedPane tabs = new JTabbedPane();
