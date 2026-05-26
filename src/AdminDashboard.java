@@ -37,9 +37,8 @@ public class AdminDashboard extends JFrame {
 
     public AdminDashboard(User admin) {
         this.admin = admin;
-
-        // Ensure users.csv matches employees.csv (while preserving the admin account)
-        regenerateEmployeeUsersFromEmployeesCsv();
+        // Initialize centralized storage if needed
+        DataStore.ensureInitialized(DataStore.currentMonth());
 
         setTitle("Admin Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -74,75 +73,13 @@ public class AdminDashboard extends JFrame {
 
     // Static method to update admin password in users.csv
     public static void updateAdminPassword(String username, String newPassword) {
-        java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
-        for (int i = 1; i < data.size(); i++) {
-            String[] row = data.get(i);
-            if (row[0].equals(username)) {
-                row[1] = newPassword;
-                break;
-            }
-        }
-        CSVHandler.writeCSV("data/users.csv", data);
-    }
-
-    private void regenerateEmployeeUsersFromEmployeesCsv() {
-        // Preserve only admin account(s) and existing employee passwords from users.csv
-        java.util.List<String[]> existing = CSVHandler.readCSV("data/users.csv");
-        java.util.List<String[]> adminRows = new ArrayList<>();
-        java.util.Map<String, String> existingEmployeePasswords = new HashMap<>();
-        for (int i = 1; i < existing.size(); i++) {
-            String[] row = existing.get(i);
-            String role = (row.length >= 3 && row[2] != null) ? row[2].trim() : "";
-            if (row.length >= 3 && "Admin".equalsIgnoreCase(role)) {
-                adminRows.add(row);
-            }
-            if (row.length >= 3 && "Employee".equalsIgnoreCase(role)) {
-                String username = row[0] == null ? "" : row[0].trim();
-                String password = row[1] == null ? "" : row[1];
-                existingEmployeePasswords.put(username, password);
-            }
-        }
-
-        // Rebuild all employee accounts from employees.csv
-        java.util.List<String[]> employeesRaw = CSVHandler.readCSV("data/employees.csv");
-        java.util.List<String[]> newUsers = new ArrayList<>();
-        // header
-        // username,password,role
-
-        for (String[] r : adminRows) {
-            if (r.length >= 3) newUsers.add(new String[]{r[0], r[1], "Admin"});
-        }
-
-        String[] header = employeesRaw.isEmpty() ? new String[0] : employeesRaw.get(0);
-        boolean newFormat = header.length >= 6 && "firstname".equalsIgnoreCase(header[1]) && "lastname".equalsIgnoreCase(header[2]);
-
-        for (int i = 1; i < employeesRaw.size(); i++) {
-            String[] row = employeesRaw.get(i);
-            if (row.length < 2) continue;
-
-            String firstName;
-            if (newFormat && row.length >= 2) {
-                firstName = String.valueOf(row[1]).trim();
-            } else {
-                String fullName = String.valueOf(row[1]);
-                firstName = fullName.trim().split("\\s+")[0];
-            }
-            String username = firstName == null ? "" : firstName.trim();
-            // Keep any previously-changed password; otherwise fall back to default
-            String password = existingEmployeePasswords.getOrDefault(username, firstName + "123");
-            newUsers.add(new String[]{username, password, "Employee"});
-        }
-
-        java.util.List<String[]> out = new ArrayList<>();
-        out.add(new String[]{"username", "password", "role"});
-        out.addAll(newUsers);
-        CSVHandler.writeCSV("data/users.csv", out);
+        DataStore.updateUserPassword(DataStore.currentMonth(), username, newPassword);
     }
 
 
     private JPanel employeePanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        employees = loadEmployees();
+        employees = DataStore.loadEmployees(DataStore.currentMonth());
         java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
 
         JPanel leftPanel = new JPanel(new BorderLayout());
@@ -163,7 +100,7 @@ public class AdminDashboard extends JFrame {
         JButton exportEmployeesBtn = new JButton("Export Employees CSV");
         exportEmployeesBtn.addActionListener(e -> {
             try {
-                Path out = exportCsvWithChooser("data/employees.csv", "employees");
+                Path out = exportEmployeesCsvWithChooser();
                 if (out != null) JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
@@ -303,7 +240,7 @@ public class AdminDashboard extends JFrame {
 
     private JPanel payrollPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        payrolls = loadPayrolls();
+        payrolls = DataStore.loadPayrolls(DataStore.currentMonth());
 
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         filterPanel.add(new JLabel("Search:"));
@@ -321,7 +258,7 @@ public class AdminDashboard extends JFrame {
         JButton exportPayrollBtn = new JButton("Export Payroll CSV");
         exportPayrollBtn.addActionListener(e -> {
             try {
-                Path out = exportCsvWithChooser("data/payroll.csv", "payroll");
+                Path out = exportPayrollCsvWithChooser();
                 if (out != null) JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
@@ -449,66 +386,7 @@ public class AdminDashboard extends JFrame {
         return panel;
     }
 
-    private java.util.List<Employee> loadEmployees() {
-        java.util.List<Employee> list = new ArrayList<>();
-        java.util.List<String[]> data = CSVHandler.readCSV("data/employees.csv");
-        if (data.isEmpty()) return list;
-
-        String[] header = data.get(0);
-        boolean newFormat = header.length >= 6
-                && "id".equalsIgnoreCase(header[0])
-                && "firstname".equalsIgnoreCase(header[1])
-                && "lastname".equalsIgnoreCase(header[2])
-                && "position".equalsIgnoreCase(header[3])
-                && "basicsalary".equalsIgnoreCase(header[4]);
-
-        for (int i = 1; i < data.size(); i++) {
-            String[] row = data.get(i);
-            if (row.length < 4) continue;
-
-            boolean flagged = false;
-            if (newFormat) {
-                if (row.length >= 6) {
-                    flagged = "1".equals(String.valueOf(row[5])) || "true".equalsIgnoreCase(String.valueOf(row[5]));
-                }
-                String id = row[0];
-                String firstName = (row.length >= 2) ? String.valueOf(row[1]).trim() : "";
-                String lastName = (row.length >= 3) ? String.valueOf(row[2]).trim() : "";
-                String position = (row.length >= 4) ? row[3] : "";
-                double salary = (row.length >= 5) ? Double.parseDouble(row[4]) : 0.0;
-                list.add(new Employee(id, firstName, lastName, position, salary, flagged));
-            } else {
-                // Backward compatible: id,name,position,basicSalary,flagged
-                if (row.length >= 5) {
-                    flagged = "1".equals(String.valueOf(row[4])) || "true".equalsIgnoreCase(String.valueOf(row[4]));
-                }
-                String id = row[0];
-                String fullName = String.valueOf(row[1]).trim();
-                String[] parts = fullName.isEmpty() ? new String[0] : fullName.split("\\s+");
-                String firstName = (parts.length >= 1) ? parts[0] : "";
-                String lastName = (parts.length <= 1) ? "" : String.join(" ", java.util.Arrays.copyOfRange(parts, 1, parts.length));
-                String position = row.length >= 3 ? row[2] : "";
-                double salary = row.length >= 4 ? Double.parseDouble(row[3]) : 0.0;
-                list.add(new Employee(id, firstName, lastName, position, salary, flagged));
-            }
-        }
-        return list;
-    }
-
-    private java.util.List<Payroll> loadPayrolls() {
-        java.util.List<Payroll> list = new ArrayList<>();
-        java.util.List<String[]> data = CSVHandler.readCSV("data/payroll.csv");
-        for (int i = 1; i < data.size(); i++) {
-            String[] r = data.get(i);
-            if (r.length < 7) continue;
-            list.add(new Payroll(r[0], r[1], r[2],
-                    Double.parseDouble(r[3]),
-                    Double.parseDouble(r[4]),
-                    Double.parseDouble(r[5]),
-                    r[6]));
-        }
-        return list;
-    }
+    // Employees and payrolls are loaded from DataStore (data/master.csv)
 
     private String formatCurrencyPHP(double amount) {
         return "PHP " + String.format("%,.2f", amount);
@@ -576,11 +454,7 @@ public class AdminDashboard extends JFrame {
         Employee emp = new Employee(id, firstName, lastName, pos, salary, false);
         employees.add(emp);
 
-        // If an ID is reused, clear any old payroll/payout records for that ID
-        deleteEmployeeReferencesById(emp.getId());
-        createEmployeeUserAccount(emp);
-        ensurePayrollForCurrentMonth(emp);
-        saveEmployees();
+        DataStore.upsertEmployeeAndEnsurePayroll(DataStore.currentMonth(), emp);
 
         dispose();
         new AdminDashboard(admin);
@@ -593,29 +467,12 @@ public class AdminDashboard extends JFrame {
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
         Employee removed = employees.remove(modelRow);
         if (removed != null) {
-            deleteEmployeeReferences(removed);
+            DataStore.deleteEmployee(DataStore.currentMonth(), removed.getId());
+            deletePayoutAccountByEmployeeId(String.valueOf(removed.getId()));
         }
-        saveEmployees();
 
         dispose();
         new AdminDashboard(admin);
-    }
-
-    private void saveEmployees() {
-        java.util.List<String[]> data = new ArrayList<>();
-        data.add(new String[]{"id", "firstName", "lastName", "position", "basicSalary", "flagged"});
-
-        for (Employee emp : employees) {
-            data.add(new String[]{
-                    emp.getId(),
-                    emp.getFirstName(),
-                    emp.getLastName(),
-                    emp.getPosition(),
-                    String.valueOf(emp.getBasicSalary()),
-                    emp.isFlagged() ? "1" : "0"
-            });
-        }
-        CSVHandler.writeCSV("data/employees.csv", data);
     }
 
 
@@ -624,7 +481,7 @@ public class AdminDashboard extends JFrame {
         if (modelIndex < 0) return;
         Employee emp = employees.get(modelIndex);
         emp.setFlagged(flagged);
-        saveEmployees();
+        DataStore.upsertEmployeeAndEnsurePayroll(DataStore.currentMonth(), emp);
         employeeModel.setValueAt(emp.isFlagged() ? 1 : 0, modelIndex, 4);
         employeeTable.repaint();
     }
@@ -638,41 +495,11 @@ public class AdminDashboard extends JFrame {
         }
         Employee emp = employees.get(modelIndex);
         emp.setBasicSalary(newSalary);
-        saveEmployees();
+        DataStore.upsertEmployeeAndEnsurePayroll(DataStore.currentMonth(), emp);
         employeeModel.setValueAt(formatCurrencyPHP(emp.getBasicSalary()), modelIndex, 3);
         employeeTable.repaint();
-        ensurePayrollForCurrentMonth(emp);
         dispose();
         new AdminDashboard(admin);
-    }
-
-    private void createEmployeeUserAccount(Employee emp) {
-        // Default generated login details based on employee FIRST name only:
-        // username = first name
-        // password = first name + "123"
-        String firstName = emp.getFirstName() == null ? "" : emp.getFirstName().trim();
-        String username = firstName;
-        String password = firstName + "123";
-
-        java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
-        boolean updated = false;
-
-        for (int i = 1; i < data.size(); i++) {
-            String[] row = data.get(i);
-            if (row.length >= 1 && username.equals(row[0])) {
-                // update existing row
-                row[1] = password;
-                if (row.length >= 3) row[2] = "Employee";
-                updated = true;
-                break;
-            }
-        }
-
-        if (!updated) {
-            data.add(new String[]{username, password, "Employee"});
-        }
-
-        CSVHandler.writeCSV("data/users.csv", data);
     }
 
     private String currentMonth() {
@@ -690,81 +517,15 @@ public class AdminDashboard extends JFrame {
         return String.format("%04d-%02d-%02d", year, month, day);
     }
 
-    private void ensurePayrollForCurrentMonth(Employee emp) {
-        String month = currentMonth();
-
-        java.util.List<String[]> raw = CSVHandler.readCSV("data/payroll.csv");
-
-        int maxId = 0;
-        for (int i = 1; i < raw.size(); i++) {
-            String[] row = raw.get(i);
-            if (row.length >= 1) {
-                try {
-                    maxId = Math.max(maxId, Integer.parseInt(row[0]));
-                } catch (Exception ignored) {
-                }
-            }
-        }
-
-        boolean found = false;
-        for (int i = 1; i < raw.size(); i++) {
-            String[] r = raw.get(i);
-            if (r.length >= 3 && emp.getId().equals(r[1]) && month.equals(r[2])) {
-                found = true;
-
-                // Always recompute payroll amounts from the latest salary
-                double deductions = emp.getBasicSalary() * 0.0666667;
-
-                double net = emp.getBasicSalary() - deductions;
-                r[3] = String.valueOf(emp.getBasicSalary());
-                r[4] = String.valueOf(deductions);
-                r[5] = String.valueOf(net);
-                break;
-            }
-        }
-
-        if (!found) {
-            double deductions = emp.getBasicSalary() * 0.0666667;
-            double net = emp.getBasicSalary() - deductions;
-
-            raw.add(new String[]{
-                    String.valueOf(maxId + 1),
-                    emp.getId(),
-                    month,
-                    String.valueOf(emp.getBasicSalary()),
-                    String.valueOf(deductions),
-                    String.valueOf(net),
-                    "Pending"
-            });
-        }
-
-        CSVHandler.writeCSV("data/payroll.csv", raw);
-    }
-
     private void savePayrolls() {
-        java.util.List<String[]> data = new ArrayList<>();
-        data.add(new String[]{"payrollId", "employeeId", "month", "basicSalary", "deductions", "netPay", "status"});
-
-        java.util.List<Payroll> toWrite = (payrolls == null) ? loadPayrolls() : payrolls;
-        for (Payroll p : toWrite) {
-            data.add(new String[]{
-                    p.getPayrollId(),
-                    p.getEmployeeId(),
-                    p.getMonth(),
-                    String.valueOf(p.getBasicSalary()),
-                    String.valueOf(p.getDeductions()),
-                    String.valueOf(p.getNetPay()),
-                    p.getStatus()
-            });
-        }
-        CSVHandler.writeCSV("data/payroll.csv", data);
+        DataStore.savePayrollStatuses(DataStore.currentMonth(), payrolls == null ? new ArrayList<>() : payrolls);
     }
 
     private void processPayroll() {
         String month = currentMonth();
         String date = currentDate();
 
-        payrolls = loadPayrolls();
+        payrolls = DataStore.loadPayrolls(DataStore.currentMonth());
         java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
         double totalToPay = 0.0;
         int countToProcess = 0;
@@ -824,24 +585,7 @@ public class AdminDashboard extends JFrame {
 
     // Refreshes the payroll table model in place
     private void refreshPayrollTable() {
-        payrolls = loadPayrolls();
-
-        // Cleanup: remove payroll records for employees that no longer exist
-        java.util.Set<String> existingEmpIds = new java.util.HashSet<>();
-        for (Employee e : employees) existingEmpIds.add(String.valueOf(e.getId()));
-        boolean removedOrphans = false;
-        java.util.List<Payroll> filtered = new ArrayList<>();
-        for (Payroll p : payrolls) {
-            if (!existingEmpIds.contains(String.valueOf(p.getEmployeeId()))) {
-                removedOrphans = true;
-                continue;
-            }
-            filtered.add(p);
-        }
-        if (removedOrphans) {
-            payrolls = filtered;
-            savePayrolls();
-        }
+        payrolls = DataStore.loadPayrolls(DataStore.currentMonth());
 
         // Remove all rows
         payrollModel.setRowCount(0);
@@ -871,7 +615,7 @@ public class AdminDashboard extends JFrame {
     }
 
     private void refreshEmployeesTable() {
-        employees = loadEmployees();
+        employees = DataStore.loadEmployees(DataStore.currentMonth());
         java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
 
         if (employeeModel == null) return;
@@ -901,82 +645,10 @@ public class AdminDashboard extends JFrame {
         refreshPayrollTable();
     }
 
-    private void deleteEmployeeReferences(Employee emp) {
-        String empId = String.valueOf(emp.getId());
-
-        // Remove payroll rows for this employee
-        java.util.List<String[]> payrollRaw = CSVHandler.readCSV("data/payroll.csv");
-        if (payrollRaw.size() > 1) {
-            java.util.List<String[]> out = new ArrayList<>();
-            out.add(payrollRaw.get(0));
-            for (int i = 1; i < payrollRaw.size(); i++) {
-                String[] row = payrollRaw.get(i);
-                if (row.length >= 2 && empId.equals(String.valueOf(row[1]).trim())) continue;
-                out.add(row);
-            }
-            CSVHandler.writeCSV("data/payroll.csv", out);
-        }
-
-        // Remove payout account rows for this employee
-        java.util.List<String[]> payoutRaw = CSVHandler.readCSV("data/payout_accounts.csv");
-        if (payoutRaw.size() > 1) {
-            java.util.List<String[]> out = new ArrayList<>();
-            out.add(payoutRaw.get(0));
-            for (int i = 1; i < payoutRaw.size(); i++) {
-                String[] row = payoutRaw.get(i);
-                if (row.length >= 1 && empId.equals(String.valueOf(row[0]).trim())) continue;
-                out.add(row);
-            }
-            CSVHandler.writeCSV("data/payout_accounts.csv", out);
-        }
-
-        // Remove employee user from users.csv (username is first name)
-        String username = emp.getFirstName() == null ? "" : emp.getFirstName().trim();
-        java.util.List<String[]> usersRaw = CSVHandler.readCSV("data/users.csv");
-        if (usersRaw.size() > 1) {
-            java.util.List<String[]> out = new ArrayList<>();
-            out.add(usersRaw.get(0));
-            for (int i = 1; i < usersRaw.size(); i++) {
-                String[] row = usersRaw.get(i);
-                if (row.length >= 1 && username.equals(String.valueOf(row[0]).trim())) continue;
-                out.add(row);
-            }
-            CSVHandler.writeCSV("data/users.csv", out);
-        }
-    }
-
-    private void deleteEmployeeReferencesById(String empIdRaw) {
-        String empId = String.valueOf(empIdRaw).trim();
-
-        java.util.List<String[]> payrollRaw = CSVHandler.readCSV("data/payroll.csv");
-        if (payrollRaw.size() > 1) {
-            java.util.List<String[]> out = new ArrayList<>();
-            out.add(payrollRaw.get(0));
-            for (int i = 1; i < payrollRaw.size(); i++) {
-                String[] row = payrollRaw.get(i);
-                if (row.length >= 2 && empId.equals(String.valueOf(row[1]).trim())) continue;
-                out.add(row);
-            }
-            CSVHandler.writeCSV("data/payroll.csv", out);
-        }
-
-        java.util.List<String[]> payoutRaw = CSVHandler.readCSV("data/payout_accounts.csv");
-        if (payoutRaw.size() > 1) {
-            java.util.List<String[]> out = new ArrayList<>();
-            out.add(payoutRaw.get(0));
-            for (int i = 1; i < payoutRaw.size(); i++) {
-                String[] row = payoutRaw.get(i);
-                if (row.length >= 1 && empId.equals(String.valueOf(row[0]).trim())) continue;
-                out.add(row);
-            }
-            CSVHandler.writeCSV("data/payout_accounts.csv", out);
-        }
-    }
-
     private void redoPayroll() {
         // For demonstration only: resets all payrolls for the current month to Pending
         String month = currentMonth();
-        payrolls = loadPayrolls();
+        payrolls = DataStore.loadPayrolls(DataStore.currentMonth());
         int resetCount = 0;
         for (Payroll p : payrolls) {
             if (month.equals(p.getMonth())) {
@@ -1008,7 +680,55 @@ public class AdminDashboard extends JFrame {
         return ids;
     }
 
-    private Path exportCsvWithChooser(String sourcePath, String prefix) throws IOException {
+    private void deletePayoutAccountByEmployeeId(String employeeIdRaw) {
+        String employeeId = String.valueOf(employeeIdRaw).trim();
+        java.util.List<String[]> raw = CSVHandler.readCSV("data/payout_accounts.csv");
+        if (raw.size() <= 1) return;
+
+        java.util.List<String[]> out = new ArrayList<>();
+        out.add(raw.get(0));
+        for (int i = 1; i < raw.size(); i++) {
+            String[] row = raw.get(i);
+            if (row.length >= 1 && employeeId.equals(String.valueOf(row[0]).trim())) continue;
+            out.add(row);
+        }
+        CSVHandler.writeCSV("data/payout_accounts.csv", out);
+    }
+
+    private Path exportEmployeesCsvWithChooser() throws IOException {
+        java.util.List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"id", "firstName", "lastName", "position", "basicSalary", "flagged"});
+        for (Employee e : DataStore.loadEmployees(DataStore.currentMonth())) {
+            rows.add(new String[]{
+                    String.valueOf(e.getId()),
+                    String.valueOf(e.getFirstName()),
+                    String.valueOf(e.getLastName()),
+                    String.valueOf(e.getPosition()),
+                    String.valueOf(e.getBasicSalary()),
+                    e.isFlagged() ? "1" : "0"
+            });
+        }
+        return exportCsvWithChooser(rows, "employees");
+    }
+
+    private Path exportPayrollCsvWithChooser() throws IOException {
+        java.util.List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"payrollId", "employeeId", "month", "basicSalary", "deductions", "netPay", "status"});
+        for (Payroll p : DataStore.loadPayrolls(DataStore.currentMonth())) {
+            rows.add(new String[]{
+                    String.valueOf(p.getPayrollId()),
+                    String.valueOf(p.getEmployeeId()),
+                    String.valueOf(p.getMonth()),
+                    String.valueOf(p.getBasicSalary()),
+                    String.valueOf(p.getDeductions()),
+                    String.valueOf(p.getNetPay()),
+                    String.valueOf(p.getStatus())
+            });
+        }
+        return exportCsvWithChooser(rows, "payroll");
+    }
+
+    private Path exportCsvWithChooser(java.util.List<String[]> rows, String prefix) throws IOException {
         Path exportsDir = Paths.get("exports");
         Files.createDirectories(exportsDir);
         String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -1027,8 +747,7 @@ public class AdminDashboard extends JFrame {
             chosen = new File(path + ".csv");
         }
 
-        java.util.List<String[]> data = CSVHandler.readCSV(sourcePath);
-        CSVHandler.writeCSV(chosen.getAbsolutePath(), data);
+        CSVHandler.writeCSV(chosen.getAbsolutePath(), rows);
         return chosen.toPath();
     }
 }

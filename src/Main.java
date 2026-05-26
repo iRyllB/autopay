@@ -68,5 +68,3 @@ class LoginFrame extends JFrame {
         }
     }
 }
-
-// AdminDashboard and EmployeeDashboard are implemented in their own files.
