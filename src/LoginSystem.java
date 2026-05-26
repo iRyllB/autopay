@@ -8,6 +8,7 @@ public class LoginSystem {
         List<String[]> data = CSVHandler.readCSV(usersFilePath);
         for (int i = 1; i < data.size(); i++) { // skip header
             String[] row = data.get(i);
+            if (row.length < 3) continue; // defensive against malformed/empty lines
             users.add(new User(row[0], row[1], row[2]));
         }
     }

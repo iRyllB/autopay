@@ -29,6 +29,9 @@ public class AdminDashboard extends JFrame {
     public AdminDashboard(User admin) {
         this.admin = admin;
 
+        // Ensure users.csv matches employees.csv (while preserving the admin account)
+        regenerateEmployeeUsersFromEmployeesCsv();
+
         setTitle("Admin Dashboard");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(980, 650);
@@ -52,8 +55,7 @@ public class AdminDashboard extends JFrame {
         add(tabs, BorderLayout.CENTER);
 
         setVisible(true);
-    // Static method to update admin password in users.csv
-
+        // Static method to update admin password in users.csv
     }
 
     // Static method to update admin password in users.csv
@@ -68,6 +70,53 @@ public class AdminDashboard extends JFrame {
         }
         CSVHandler.writeCSV("data/users.csv", data);
     }
+
+    private void regenerateEmployeeUsersFromEmployeesCsv() {
+        // Preserve only admin account(s) from existing users.csv
+        java.util.List<String[]> existing = CSVHandler.readCSV("data/users.csv");
+        java.util.List<String[]> adminRows = new ArrayList<>();
+        for (int i = 1; i < existing.size(); i++) {
+            String[] row = existing.get(i);
+            if (row.length >= 3 && "Admin".equalsIgnoreCase(row[2])) {
+                adminRows.add(row);
+            }
+        }
+
+        // Rebuild all employee accounts from employees.csv
+        java.util.List<String[]> employeesRaw = CSVHandler.readCSV("data/employees.csv");
+        java.util.List<String[]> newUsers = new ArrayList<>();
+        // header
+        // username,password,role
+
+        for (String[] r : adminRows) {
+            if (r.length >= 3) newUsers.add(new String[]{r[0], r[1], "Admin"});
+        }
+
+        String[] header = employeesRaw.isEmpty() ? new String[0] : employeesRaw.get(0);
+        boolean newFormat = header.length >= 6 && "firstname".equalsIgnoreCase(header[1]) && "lastname".equalsIgnoreCase(header[2]);
+
+        for (int i = 1; i < employeesRaw.size(); i++) {
+            String[] row = employeesRaw.get(i);
+            if (row.length < 2) continue;
+
+            String firstName;
+            if (newFormat && row.length >= 2) {
+                firstName = String.valueOf(row[1]).trim();
+            } else {
+                String fullName = String.valueOf(row[1]);
+                firstName = fullName.trim().split("\\s+")[0];
+            }
+            String username = firstName;
+            String password = firstName + "123";
+            newUsers.add(new String[]{username, password, "Employee"});
+        }
+
+        java.util.List<String[]> out = new ArrayList<>();
+        out.add(new String[]{"username", "password", "role"});
+        out.addAll(newUsers);
+        CSVHandler.writeCSV("data/users.csv", out);
+    }
+
 
     private JPanel employeePanel() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -275,16 +324,45 @@ public class AdminDashboard extends JFrame {
     private java.util.List<Employee> loadEmployees() {
         java.util.List<Employee> list = new ArrayList<>();
         java.util.List<String[]> data = CSVHandler.readCSV("data/employees.csv");
+        if (data.isEmpty()) return list;
+
+        String[] header = data.get(0);
+        boolean newFormat = header.length >= 6
+                && "id".equalsIgnoreCase(header[0])
+                && "firstname".equalsIgnoreCase(header[1])
+                && "lastname".equalsIgnoreCase(header[2])
+                && "position".equalsIgnoreCase(header[3])
+                && "basicsalary".equalsIgnoreCase(header[4]);
+
         for (int i = 1; i < data.size(); i++) {
             String[] row = data.get(i);
             if (row.length < 4) continue;
 
             boolean flagged = false;
-            if (row.length >= 5) {
-                flagged = "1".equals(String.valueOf(row[4])) || "true".equalsIgnoreCase(String.valueOf(row[4]));
+            if (newFormat) {
+                if (row.length >= 6) {
+                    flagged = "1".equals(String.valueOf(row[5])) || "true".equalsIgnoreCase(String.valueOf(row[5]));
+                }
+                String id = row[0];
+                String firstName = (row.length >= 2) ? String.valueOf(row[1]).trim() : "";
+                String lastName = (row.length >= 3) ? String.valueOf(row[2]).trim() : "";
+                String position = (row.length >= 4) ? row[3] : "";
+                double salary = (row.length >= 5) ? Double.parseDouble(row[4]) : 0.0;
+                list.add(new Employee(id, firstName, lastName, position, salary, flagged));
+            } else {
+                // Backward compatible: id,name,position,basicSalary,flagged
+                if (row.length >= 5) {
+                    flagged = "1".equals(String.valueOf(row[4])) || "true".equalsIgnoreCase(String.valueOf(row[4]));
+                }
+                String id = row[0];
+                String fullName = String.valueOf(row[1]).trim();
+                String[] parts = fullName.isEmpty() ? new String[0] : fullName.split("\\s+");
+                String firstName = (parts.length >= 1) ? parts[0] : "";
+                String lastName = (parts.length <= 1) ? "" : String.join(" ", java.util.Arrays.copyOfRange(parts, 1, parts.length));
+                String position = row.length >= 3 ? row[2] : "";
+                double salary = row.length >= 4 ? Double.parseDouble(row[3]) : 0.0;
+                list.add(new Employee(id, firstName, lastName, position, salary, flagged));
             }
-
-            list.add(new Employee(row[0], row[1], row[2], Double.parseDouble(row[3]), flagged));
         }
         return list;
     }
@@ -310,13 +388,15 @@ public class AdminDashboard extends JFrame {
 
     private void addEmployee() {
         JTextField idField = new JTextField();
-        JTextField nameField = new JTextField();
+        JTextField firstNameField = new JTextField();
+        JTextField lastNameField = new JTextField();
         JTextField posField = new JTextField();
         JTextField salaryFieldInput = new JTextField();
 
         Object[] fields = {
                 "ID:", idField,
-                "Name:", nameField,
+                "First Name:", firstNameField,
+                "Last Name:", lastNameField,
                 "Position:", posField,
                 "Basic Salary:", salaryFieldInput
         };
@@ -325,11 +405,12 @@ public class AdminDashboard extends JFrame {
         if (res != JOptionPane.OK_OPTION) return;
 
         String id = idField.getText().trim();
-        String name = nameField.getText().trim();
+        String firstName = firstNameField.getText().trim();
+        String lastName = lastNameField.getText().trim();
         String pos = posField.getText().trim();
         double salary = Double.parseDouble(salaryFieldInput.getText().trim());
 
-        Employee emp = new Employee(id, name, pos, salary, false);
+        Employee emp = new Employee(id, firstName, lastName, pos, salary, false);
         employees.add(emp);
 
         createEmployeeUserAccount(emp);
@@ -354,12 +435,13 @@ public class AdminDashboard extends JFrame {
 
     private void saveEmployees() {
         java.util.List<String[]> data = new ArrayList<>();
-        data.add(new String[]{"id", "name", "position", "basicSalary", "flagged"});
+        data.add(new String[]{"id", "firstName", "lastName", "position", "basicSalary", "flagged"});
 
         for (Employee emp : employees) {
             data.add(new String[]{
                     emp.getId(),
-                    emp.getName(),
+                    emp.getFirstName(),
+                    emp.getLastName(),
                     emp.getPosition(),
                     String.valueOf(emp.getBasicSalary()),
                     emp.isFlagged() ? "1" : "0"
@@ -393,23 +475,32 @@ public class AdminDashboard extends JFrame {
     }
 
     private void createEmployeeUserAccount(Employee emp) {
-        String username = "emp" + emp.getId();
-        String password = "emp123";
+        // Default generated login details based on employee FIRST name only:
+        // username = first name
+        // password = first name + "123"
+        String firstName = emp.getFirstName() == null ? "" : emp.getFirstName().trim();
+        String username = firstName;
+        String password = firstName + "123";
 
         java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
-        boolean exists = false;
+        boolean updated = false;
+
         for (int i = 1; i < data.size(); i++) {
             String[] row = data.get(i);
             if (row.length >= 1 && username.equals(row[0])) {
-                exists = true;
+                // update existing row
+                row[1] = password;
+                if (row.length >= 3) row[2] = "Employee";
+                updated = true;
                 break;
             }
         }
 
-        if (!exists) {
+        if (!updated) {
             data.add(new String[]{username, password, "Employee"});
-            CSVHandler.writeCSV("data/users.csv", data);
         }
+
+        CSVHandler.writeCSV("data/users.csv", data);
     }
 
     private String currentMonth() {
@@ -486,8 +577,8 @@ public class AdminDashboard extends JFrame {
         java.util.List<String[]> data = new ArrayList<>();
         data.add(new String[]{"payrollId", "employeeId", "month", "basicSalary", "deductions", "netPay", "status"});
 
-        payrolls = loadPayrolls();
-        for (Payroll p : payrolls) {
+        java.util.List<Payroll> toWrite = (payrolls == null) ? loadPayrolls() : payrolls;
+        for (Payroll p : toWrite) {
             data.add(new String[]{
                     p.getPayrollId(),
                     p.getEmployeeId(),
@@ -547,8 +638,37 @@ public class AdminDashboard extends JFrame {
         JOptionPane.showMessageDialog(this,
                 "Payroll processed for " + countToProcess + " employees.\nFlagged employees were skipped.\nTotal paid: " + formatCurrencyPHP(totalToPay) + "\nDate: " + date);
 
-        dispose();
-        new AdminDashboard(admin);
+        refreshPayrollTable();
+    }
+
+    // Refreshes the payroll table model in place
+    private void refreshPayrollTable() {
+        payrolls = loadPayrolls();
+        // Remove all rows
+        payrollModel.setRowCount(0);
+        // Determine if all payrolls for the current month are still pending
+        boolean allPending = true;
+        for (Payroll p : payrolls) {
+            if (currentMonth().equals(p.getMonth()) && !"Pending".equalsIgnoreCase(p.getStatus())) {
+                allPending = false;
+                break;
+            }
+        }
+        for (Payroll p : payrolls) {
+            String statusToShow = p.getStatus();
+            if (allPending && currentMonth().equals(p.getMonth())) {
+                statusToShow = "Pending";
+            }
+            payrollModel.addRow(new Object[]{
+                p.getPayrollId(),
+                p.getEmployeeId(),
+                p.getMonth(),
+                formatCurrencyPHP(p.getBasicSalary()),
+                formatCurrencyPHP(p.getDeductions()),
+                formatCurrencyPHP(p.getNetPay()),
+                statusToShow
+            });
+        }
     }
 
     private void redoPayroll() {
