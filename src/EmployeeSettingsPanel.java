@@ -41,7 +41,7 @@ public class EmployeeSettingsPanel extends JPanel {
         java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
         for (int i = 1; i < data.size(); i++) {
             String[] row = data.get(i);
-            if (row[0].equals(username)) {
+            if (row.length >= 1 && row[0] != null && row[0].trim().equals(username == null ? "" : username.trim())) {
                 row[1] = newPassword;
                 break;
             }

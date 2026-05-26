@@ -48,13 +48,18 @@ public class AdminDashboard extends JFrame {
 
         JPanel topPanel = new JPanel(new BorderLayout());
         JLabel welcome = new JLabel("Welcome, Admin: " + this.admin.getUsername());
+        JButton refreshAllBtn = new JButton("Refresh");
+        refreshAllBtn.addActionListener(e -> refreshAllFromCsv());
         JButton logoutBtn = new JButton("Logout");
         logoutBtn.addActionListener(e -> {
             dispose();
             new LoginFrame();
         });
         topPanel.add(welcome, BorderLayout.WEST);
-        topPanel.add(logoutBtn, BorderLayout.EAST);
+        JPanel topRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        topRight.add(refreshAllBtn);
+        topRight.add(logoutBtn);
+        topPanel.add(topRight, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
         JTabbedPane tabs = new JTabbedPane();
@@ -86,12 +91,13 @@ public class AdminDashboard extends JFrame {
         java.util.Map<String, String> existingEmployeePasswords = new HashMap<>();
         for (int i = 1; i < existing.size(); i++) {
             String[] row = existing.get(i);
-            if (row.length >= 3 && "Admin".equalsIgnoreCase(row[2])) {
+            String role = (row.length >= 3 && row[2] != null) ? row[2].trim() : "";
+            if (row.length >= 3 && "Admin".equalsIgnoreCase(role)) {
                 adminRows.add(row);
             }
-            if (row.length >= 3 && "Employee".equalsIgnoreCase(row[2])) {
-                String username = row[0];
-                String password = row[1];
+            if (row.length >= 3 && "Employee".equalsIgnoreCase(role)) {
+                String username = row[0] == null ? "" : row[0].trim();
+                String password = row[1] == null ? "" : row[1];
                 existingEmployeePasswords.put(username, password);
             }
         }
@@ -120,7 +126,7 @@ public class AdminDashboard extends JFrame {
                 String fullName = String.valueOf(row[1]);
                 firstName = fullName.trim().split("\\s+")[0];
             }
-            String username = firstName;
+            String username = firstName == null ? "" : firstName.trim();
             // Keep any previously-changed password; otherwise fall back to default
             String password = existingEmployeePasswords.getOrDefault(username, firstName + "123");
             newUsers.add(new String[]{username, password, "Employee"});
@@ -842,6 +848,37 @@ public class AdminDashboard extends JFrame {
                 statusToShow
             });
         }
+    }
+
+    private void refreshEmployeesTable() {
+        employees = loadEmployees();
+        java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
+
+        if (employeeModel == null) return;
+        employeeModel.setRowCount(0);
+        for (Employee emp : employees) {
+            boolean hasPayout = payoutEmployeeIds.contains(String.valueOf(emp.getId()));
+            employeeModel.addRow(new Object[]{
+                    emp.getId(),
+                    emp.getName(),
+                    emp.getPosition(),
+                    formatCurrencyPHP(emp.getBasicSalary()),
+                    emp.isFlagged() ? 1 : 0,
+                    hasPayout ? "On file" : "No account"
+            });
+        }
+
+        if (employeeTable != null && employeeTable.getRowSorter() instanceof TableRowSorter) {
+            ((TableRowSorter<?>) employeeTable.getRowSorter()).sort();
+        }
+        employeeTable.repaint();
+        employeeControlPanel.updateFromEmployee(null, -1);
+        selectedEmployeeModelIndex = -1;
+    }
+
+    private void refreshAllFromCsv() {
+        refreshEmployeesTable();
+        refreshPayrollTable();
     }
 
     private void redoPayroll() {
