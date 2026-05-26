@@ -23,7 +23,7 @@ public class AdminDashboard extends JFrame {
 
         // Top panel with logout
         JPanel topPanel = new JPanel(new BorderLayout());
-        JLabel welcome = new JLabel("Welcome, Admin: " + admin.getUsername());
+        JLabel welcome = new JLabel("Welcome, Admin: " + this.admin.getUsername());
         JButton logoutBtn = new JButton("Logout");
         logoutBtn.addActionListener(e -> { dispose(); new LoginFrame(); });
         topPanel.add(welcome, BorderLayout.WEST);

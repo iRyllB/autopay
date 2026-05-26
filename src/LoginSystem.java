@@ -1,6 +1,5 @@
 import java.util.*;
 
-// Handles login validation
 public class LoginSystem {
     private List<User> users;
 
