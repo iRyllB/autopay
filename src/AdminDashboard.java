@@ -22,6 +22,8 @@ public class AdminDashboard extends JFrame {
     // Table filtering widgets
     private JTextField searchField;
     private JComboBox<String> flaggedFilter;
+    private JTextField payrollSearchField;
+    private JComboBox<String> payrollStatusFilter;
 
     // Index in employees list (model index)
     private int selectedEmployeeModelIndex = -1;
@@ -121,6 +123,7 @@ public class AdminDashboard extends JFrame {
     private JPanel employeePanel() {
         JPanel panel = new JPanel(new BorderLayout());
         employees = loadEmployees();
+        java.util.Set<String> payoutEmployeeIds = loadPayoutEmployeeIds();
 
         JPanel leftPanel = new JPanel(new BorderLayout());
 
@@ -140,7 +143,7 @@ public class AdminDashboard extends JFrame {
         leftPanel.add(filterPanel, BorderLayout.NORTH);
 
         // Table model includes a hidden-ish flagged column for filtering/rendering
-        String[] columns = {"ID", "Name", "Position", "Basic Salary", "Flagged"};
+        String[] columns = {"ID", "Name", "Position", "Basic Salary", "Flagged", "Payout Account"};
         employeeModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -149,12 +152,14 @@ public class AdminDashboard extends JFrame {
         };
 
         for (Employee emp : employees) {
+            boolean hasPayout = payoutEmployeeIds.contains(String.valueOf(emp.getId()));
             employeeModel.addRow(new Object[]{
                     emp.getId(),
                     emp.getName(),
                     emp.getPosition(),
                     formatCurrencyPHP(emp.getBasicSalary()),
-                    emp.isFlagged() ? 1 : 0
+                    emp.isFlagged() ? 1 : 0,
+                    hasPayout ? "On file" : "No payout account"
             });
         }
 
@@ -222,6 +227,8 @@ public class AdminDashboard extends JFrame {
                 return a.toString().compareTo(b.toString());
             }
         });
+        sorter.setSortKeys(java.util.List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+        sorter.sort();
 
         refreshBtn.addActionListener(e -> {
             dispose();
@@ -267,6 +274,21 @@ public class AdminDashboard extends JFrame {
         JPanel panel = new JPanel(new BorderLayout());
         payrolls = loadPayrolls();
 
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        filterPanel.add(new JLabel("Search:"));
+        payrollSearchField = new JTextField(18);
+        filterPanel.add(payrollSearchField);
+
+        filterPanel.add(new JLabel("Status:"));
+        payrollStatusFilter = new JComboBox<>(new String[]{"All", "Pending Only", "Processed Only"});
+        filterPanel.add(payrollStatusFilter);
+
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.addActionListener(e -> refreshPayrollTable());
+        filterPanel.add(refreshBtn);
+
+        panel.add(filterPanel, BorderLayout.NORTH);
+
         String[] columns = {"Payroll ID", "Employee ID", "Month", "Basic Salary", "Deductions", "Net Pay", "Status"};
         payrollModel = new DefaultTableModel(columns, 0) {
             @Override
@@ -275,24 +297,21 @@ public class AdminDashboard extends JFrame {
             }
         };
 
+        // Determine if all payrolls for the current month are still pending
+        boolean allPending = true;
         for (Payroll p : payrolls) {
+            if (currentMonth().equals(p.getMonth()) && !"Pending".equalsIgnoreCase(p.getStatus())) {
+                allPending = false;
+                break;
             }
+        }
 
-            // Determine if all payrolls for the current month are still pending
-            boolean allPending = true;
-            for (Payroll p : payrolls) {
-                if (currentMonth().equals(p.getMonth()) && !"Pending".equalsIgnoreCase(p.getStatus())) {
-                    allPending = false;
-                    break;
-                }
+        for (Payroll p : payrolls) {
+            String statusToShow = p.getStatus();
+            if (allPending && currentMonth().equals(p.getMonth())) {
+                statusToShow = "Pending";
             }
-
-            for (Payroll p : payrolls) {
-                String statusToShow = p.getStatus();
-                if (allPending && currentMonth().equals(p.getMonth())) {
-                    statusToShow = "Pending";
-                }
-                payrollModel.addRow(new Object[]{
+            payrollModel.addRow(new Object[]{
                     p.getPayrollId(),
                     p.getEmployeeId(),
                     p.getMonth(),
@@ -300,10 +319,72 @@ public class AdminDashboard extends JFrame {
                     formatCurrencyPHP(p.getDeductions()),
                     formatCurrencyPHP(p.getNetPay()),
                     statusToShow
-                });
+            });
         }
 
         payrollTable = new JTable(payrollModel);
+        payrollTable.setAutoCreateRowSorter(true);
+        TableRowSorter<DefaultTableModel> payrollSorter = (TableRowSorter<DefaultTableModel>) payrollTable.getRowSorter();
+        payrollSorter.setComparator(0, (a, b) -> {
+            try {
+                return Integer.compare(Integer.parseInt(a.toString()), Integer.parseInt(b.toString()));
+            } catch (Exception e) {
+                return a.toString().compareTo(b.toString());
+            }
+        });
+        payrollSorter.setSortKeys(java.util.List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+        payrollSorter.sort();
+
+        payrollTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                int modelRow = table.convertRowIndexToModel(row);
+                String status = String.valueOf(table.getModel().getValueAt(modelRow, 6));
+                if (!isSelected && "Pending".equalsIgnoreCase(status)) {
+                    c.setBackground(new Color(255, 220, 220));
+                } else {
+                    if (!isSelected) c.setBackground(Color.WHITE);
+                }
+                return c;
+            }
+        });
+
+        Runnable applyPayrollFilters = () -> {
+            String text = (payrollSearchField.getText() == null) ? "" : payrollSearchField.getText().trim().toLowerCase();
+            String statusFilter = String.valueOf(payrollStatusFilter.getSelectedItem());
+
+            payrollSorter.setRowFilter(new RowFilter<DefaultTableModel, Integer>() {
+                @Override
+                public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+                    String payrollId = String.valueOf(entry.getValue(0));
+                    String employeeId = String.valueOf(entry.getValue(1));
+                    String month = String.valueOf(entry.getValue(2));
+                    String status = String.valueOf(entry.getValue(6));
+
+                    boolean matchesText = text.isEmpty()
+                            || payrollId.toLowerCase().contains(text)
+                            || employeeId.toLowerCase().contains(text)
+                            || month.toLowerCase().contains(text)
+                            || status.toLowerCase().contains(text);
+
+                    boolean matchesStatus = true;
+                    if ("Pending Only".equals(statusFilter)) matchesStatus = "Pending".equalsIgnoreCase(status);
+                    if ("Processed Only".equals(statusFilter)) matchesStatus = "Processed".equalsIgnoreCase(status);
+
+                    return matchesText && matchesStatus;
+                }
+            });
+        };
+
+        payrollSearchField.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                applyPayrollFilters.run();
+            }
+        });
+        payrollStatusFilter.addActionListener(e -> applyPayrollFilters.run());
+
         panel.add(new JScrollPane(payrollTable), BorderLayout.CENTER);
 
         // Presentation buttons
@@ -408,7 +489,42 @@ public class AdminDashboard extends JFrame {
         String firstName = firstNameField.getText().trim();
         String lastName = lastNameField.getText().trim();
         String pos = posField.getText().trim();
-        double salary = Double.parseDouble(salaryFieldInput.getText().trim());
+        String salaryText = salaryFieldInput.getText().trim();
+
+        if (!id.matches("\\d+")) {
+            JOptionPane.showMessageDialog(this, "ID must be numbers only.");
+            return;
+        }
+        for (Employee existing : employees) {
+            if (id.equals(String.valueOf(existing.getId()))) {
+                JOptionPane.showMessageDialog(this, "Employee ID already exists.");
+                return;
+            }
+        }
+        if (firstName.isEmpty() || !firstName.matches("[A-Za-z][A-Za-z\\s\\-']*")) {
+            JOptionPane.showMessageDialog(this, "First name is required (letters only).");
+            return;
+        }
+        if (!lastName.isEmpty() && !lastName.matches("[A-Za-z][A-Za-z\\s\\-']*")) {
+            JOptionPane.showMessageDialog(this, "Last name must be letters only.");
+            return;
+        }
+        if (pos.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Position is required.");
+            return;
+        }
+
+        double salary;
+        try {
+            salary = Double.parseDouble(salaryText);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Basic Salary must be a valid number.");
+            return;
+        }
+        if (salary < 0) {
+            JOptionPane.showMessageDialog(this, "Basic Salary cannot be negative.");
+            return;
+        }
 
         Employee emp = new Employee(id, firstName, lastName, pos, salary, false);
         employees.add(emp);
@@ -464,6 +580,10 @@ public class AdminDashboard extends JFrame {
     // Called by EmployeeControlPanel
     public void syncSalaryToModelAndEmployee(int modelIndex, double newSalary) {
         if (modelIndex < 0) return;
+        if (newSalary < 0) {
+            JOptionPane.showMessageDialog(this, "Salary cannot be negative.");
+            return;
+        }
         Employee emp = employees.get(modelIndex);
         emp.setBasicSalary(newSalary);
         saveEmployees();
@@ -694,6 +814,16 @@ public class AdminDashboard extends JFrame {
             if (String.valueOf(e.getId()).equals(String.valueOf(empId))) return e;
         }
         return null;
+    }
+
+    private java.util.Set<String> loadPayoutEmployeeIds() {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        java.util.List<String[]> data = CSVHandler.readCSV("data/payout_accounts.csv");
+        for (int i = 1; i < data.size(); i++) {
+            String[] row = data.get(i);
+            if (row.length >= 1) ids.add(String.valueOf(row[0]));
+        }
+        return ids;
     }
 }
 

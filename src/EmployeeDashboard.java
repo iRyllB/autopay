@@ -36,20 +36,10 @@ public class EmployeeDashboard extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
 
         // Payroll tab
-        JPanel infoPanel = new JPanel(new GridLayout(0, 1));
-        infoPanel.setBorder(BorderFactory.createTitledBorder("Payroll Details"));
-        for (Payroll p : payrolls) {
-            infoPanel.add(new JLabel("Month: " + p.getMonth()));
-            infoPanel.add(new JLabel("Basic Salary: " + formatCurrency(p.getBasicSalary())));
-            infoPanel.add(new JLabel("Deductions: " + formatCurrency(p.getDeductions())));
-            infoPanel.add(new JLabel("Net Pay: " + formatCurrency(p.getNetPay())));
-            infoPanel.add(new JLabel("Status: " + p.getStatus()));
-            infoPanel.add(new JLabel("----------------------"));
-        }
-        tabs.addTab("Payroll", infoPanel);
+        tabs.addTab("Payroll", buildPayrollTab());
 
         // Settings tab
-        tabs.addTab("Settings", new EmployeeSettingsPanel(employeeUser));
+        tabs.addTab("Settings", new EmployeeSettingsPanel(employeeUser, employee));
 
         // Show flagged warning if employee is flagged (top box)
         if (employee != null && employee.isFlagged()) {
@@ -68,6 +58,75 @@ public class EmployeeDashboard extends JFrame {
 
     private String formatCurrency(double amount) {
         return "₱" + String.format("%,.2f", amount);
+    }
+
+    private JPanel buildPayrollTab() {
+        JPanel root = new JPanel(new BorderLayout());
+
+        JPanel listPanel = new JPanel();
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        if (payrolls == null || payrolls.isEmpty()) {
+            JLabel empty = new JLabel("No payroll records found.");
+            empty.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            root.add(empty, BorderLayout.NORTH);
+            return root;
+        }
+
+        for (Payroll p : payrolls) {
+            listPanel.add(buildPayrollCard(p));
+            listPanel.add(Box.createVerticalStrut(10));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        root.add(scroll, BorderLayout.CENTER);
+        return root;
+    }
+
+    private JPanel buildPayrollCard(Payroll p) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(220, 220, 220)),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        ));
+
+        JPanel topRow = new JPanel(new BorderLayout());
+        topRow.setOpaque(false);
+        JLabel monthLabel = new JLabel("Month: " + p.getMonth());
+        monthLabel.setFont(monthLabel.getFont().deriveFont(Font.BOLD));
+        topRow.add(monthLabel, BorderLayout.WEST);
+        topRow.add(buildStatusBadge(p.getStatus()), BorderLayout.EAST);
+        card.add(topRow);
+
+        card.add(Box.createVerticalStrut(8));
+        card.add(new JLabel("Basic Salary: " + formatCurrency(p.getBasicSalary())));
+        card.add(new JLabel("Deductions: " + formatCurrency(p.getDeductions())));
+        card.add(new JLabel("Net Pay: " + formatCurrency(p.getNetPay())));
+
+        if ("Processed".equalsIgnoreCase(String.valueOf(p.getStatus()).trim())) {
+            card.add(Box.createVerticalStrut(8));
+            JLabel note = new JLabel("Payment has been sent; it may take a while to reflect on your payroll account.");
+            note.setForeground(new Color(70, 70, 70));
+            card.add(note);
+        }
+
+        return card;
+    }
+
+    private JComponent buildStatusBadge(String status) {
+        String normalized = status == null ? "" : status.trim();
+        boolean processed = "Processed".equalsIgnoreCase(normalized);
+
+        JLabel badge = new JLabel(processed ? "PROCESSED" : "PENDING");
+        badge.setOpaque(true);
+        badge.setForeground(Color.WHITE);
+        badge.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        badge.setFont(badge.getFont().deriveFont(Font.BOLD, 12f));
+        badge.setBackground(processed ? new Color(34, 139, 34) : new Color(190, 70, 70));
+        return badge;
     }
 
     private Employee findEmployee(String username) {

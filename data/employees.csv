@@ -28,3 +28,4 @@ id,firstName,lastName,position,basicSalary,flagged
 28,Tom,Yu,QA,32000.0,0
 29,May,Lim,Analyst,34000.0,0
 30,Jan,Go,Manager,60000.0,0
+3,Bryll,Pon,Engineer,15000.0,0
