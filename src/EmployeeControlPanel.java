@@ -19,6 +19,8 @@ public class EmployeeControlPanel extends JPanel {
         add(Box.createVerticalStrut(10));
         add(new JLabel("Basic Salary (PHP):"));
         salaryField = new JTextField();
+        salaryField.setMaximumSize(new Dimension(120, 28));
+        salaryField.setPreferredSize(new Dimension(120, 28));
         add(salaryField);
 
         add(Box.createVerticalStrut(10));

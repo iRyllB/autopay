@@ -1,4 +1,31 @@
 id,name,position,basicSalary,flagged
 1,John Doe,Teacher,30000.0,0
 2,Jane Smith,Accountant,35000.0,1
-3,Bryll,Engineer,2323.0,0
+3,Bryll,Engineer,50000.0,1
+4,Anna Cruz,HR,28000.0,0
+5,Mark Lee,Developer,42000.0,0
+6,Paula Reyes,Designer,31000.0,0
+7,Chris Tan,Support,27000.0,0
+8,Sam Yu,QA,32000.0,0
+9,Kim Lim,Analyst,34000.0,0
+10,Alex Go,Manager,60000.0,0
+11,Faith Ong,Clerk,25000.0,0
+12,Leo Sy,Technician,29000.0,0
+13,Joyce Chua,Receptionist,23000.0,0
+14,Eric Dee,Driver,20000.0,0
+15,Grace Uy,Janitor,18000.0,0
+16,Neil Co,Security,21000.0,0
+17,Olive Lao,Trainer,33000.0,0
+18,Pat Santos,Consultant,55000.0,0
+19,Matt Chan,Auditor,37000.0,0
+20,Bea Lim,Assistant,26000.0,0
+21,Rob Ong,Supervisor,38000.0,0
+22,Jean Sy,Accountant,35000.0,0
+23,Tim Yap,Developer,42000.0,0
+24,Ina Cruz,HR,28000.0,0
+25,Max Lee,Developer,42000.0,0
+26,Elle Reyes,Designer,31000.0,0
+27,Dan Tan,Support,27000.0,0
+28,Tom Yu,QA,32000.0,0
+29,May Lim,Analyst,34000.0,0
+30,Jan Go,Manager,60000.0,0

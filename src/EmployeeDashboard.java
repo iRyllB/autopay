@@ -28,13 +28,15 @@ public class EmployeeDashboard extends JFrame {
         employee = findEmployee(user.getUsername());
         payrolls = loadPayrolls(employee.getId());
 
-        // Show flagged warning if employee is flagged
+        // Show flagged warning if employee is flagged (top box)
         if (employee != null && employee.isFlagged()) {
             JPanel flaggedPanel = new JPanel();
             flaggedPanel.setBackground(new Color(255, 220, 220));
             flaggedPanel.setBorder(BorderFactory.createLineBorder(Color.RED));
             flaggedPanel.add(new JLabel("You have been flagged. For more information, please contact management +639123456788."));
-            add(flaggedPanel, BorderLayout.SOUTH);
+            JPanel flaggedBox = new JPanel(new BorderLayout());
+            flaggedBox.add(flaggedPanel, BorderLayout.CENTER);
+            add(flaggedBox, BorderLayout.NORTH);
         }
 
         JPanel infoPanel = new JPanel(new GridLayout(0, 1));

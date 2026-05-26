@@ -3,6 +3,7 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.util.*;
 import EmployeeControlPanel;
+import AdminSettingsPanel;
 
 public class AdminDashboard extends JFrame {
     private final User admin;
@@ -49,7 +50,20 @@ public class AdminDashboard extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Employees", employeePanel());
         tabs.addTab("Payroll", payrollPanel());
+        tabs.addTab("Settings", new AdminSettingsPanel(admin));
         add(tabs, BorderLayout.CENTER);
+    // Static method to update admin password in users.csv
+    public static void updateAdminPassword(String username, String newPassword) {
+        java.util.List<String[]> data = CSVHandler.readCSV("data/users.csv");
+        for (int i = 1; i < data.size(); i++) {
+            String[] row = data.get(i);
+            if (row[0].equals(username)) {
+                row[1] = newPassword;
+                break;
+            }
+        }
+        CSVHandler.writeCSV("data/users.csv", data);
+    }
 
         setVisible(true);
     }
@@ -150,6 +164,14 @@ public class AdminDashboard extends JFrame {
 
         // Sort/filter wiring
         TableRowSorter<DefaultTableModel> sorter = (TableRowSorter<DefaultTableModel>) employeeTable.getRowSorter();
+        // Fix: Sort ID column numerically
+        sorter.setComparator(0, (a, b) -> {
+            try {
+                return Integer.compare(Integer.parseInt(a.toString()), Integer.parseInt(b.toString()));
+            } catch (Exception e) {
+                return a.toString().compareTo(b.toString());
+            }
+        });
 
         refreshBtn.addActionListener(e -> {
             dispose();
