@@ -2,6 +2,12 @@ import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.util.*;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 
 public class AdminDashboard extends JFrame {
@@ -140,6 +146,17 @@ public class AdminDashboard extends JFrame {
         JButton refreshBtn = new JButton("Refresh");
         filterPanel.add(refreshBtn);
 
+        JButton exportEmployeesBtn = new JButton("Export Employees CSV");
+        exportEmployeesBtn.addActionListener(e -> {
+            try {
+                Path out = exportCsvCopy("data/employees.csv", "employees");
+                JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
+            }
+        });
+        filterPanel.add(exportEmployeesBtn);
+
         leftPanel.add(filterPanel, BorderLayout.NORTH);
 
         // Table model includes a hidden-ish flagged column for filtering/rendering
@@ -159,7 +176,7 @@ public class AdminDashboard extends JFrame {
                     emp.getPosition(),
                     formatCurrencyPHP(emp.getBasicSalary()),
                     emp.isFlagged() ? 1 : 0,
-                    hasPayout ? "On file" : "No payout account"
+                    hasPayout ? "On file" : "No account"
             });
         }
 
@@ -286,6 +303,17 @@ public class AdminDashboard extends JFrame {
         JButton refreshBtn = new JButton("Refresh");
         refreshBtn.addActionListener(e -> refreshPayrollTable());
         filterPanel.add(refreshBtn);
+
+        JButton exportPayrollBtn = new JButton("Export Payroll CSV");
+        exportPayrollBtn.addActionListener(e -> {
+            try {
+                Path out = exportCsvCopy("data/payroll.csv", "payroll");
+                JOptionPane.showMessageDialog(this, "Exported: " + out.toString());
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Export failed: " + ex.getMessage());
+            }
+        });
+        filterPanel.add(exportPayrollBtn);
 
         panel.add(filterPanel, BorderLayout.NORTH);
 
@@ -824,6 +852,17 @@ public class AdminDashboard extends JFrame {
             if (row.length >= 1) ids.add(String.valueOf(row[0]));
         }
         return ids;
+    }
+
+    private Path exportCsvCopy(String sourcePath, String prefix) throws IOException {
+        Path exportsDir = Paths.get("exports");
+        Files.createDirectories(exportsDir);
+        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        Path out = exportsDir.resolve(prefix + "_" + ts + ".csv");
+
+        java.util.List<String[]> data = CSVHandler.readCSV(sourcePath);
+        CSVHandler.writeCSV(out.toString(), data);
+        return out;
     }
 }
 
