@@ -1,7 +1,6 @@
 import java.io.*;
 import java.util.*;
 
-// Handles reading and writing CSV files
 public class CSVHandler {
     public static List<String[]> readCSV(String filePath) {
         List<String[]> data = new ArrayList<>();

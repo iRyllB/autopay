@@ -23,16 +23,16 @@ public class AdminDashboard extends JFrame {
     private JTable payrollTable;
     private DefaultTableModel payrollModel;
 
-    // Right-side control panel (salary edit + flagged)
+    //control panel
     private EmployeeControlPanel employeeControlPanel;
 
-    // Table filtering widgets
+    //filter
     private JTextField searchField;
     private JComboBox<String> flaggedFilter;
     private JTextField payrollSearchField;
     private JComboBox<String> payrollStatusFilter;
 
-    // Index in employees list (model index)
+    //track employee
     private int selectedEmployeeModelIndex = -1;
 
     public AdminDashboard(User admin) {
